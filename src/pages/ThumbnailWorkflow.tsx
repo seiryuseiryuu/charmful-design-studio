@@ -22,6 +22,7 @@ import {
   Upload,
   Lightbulb,
   Eye,
+  Pencil,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -56,6 +57,12 @@ interface PatternAnalysis {
   effects: string;
 }
 
+interface ModelImageInfo {
+  imageUrl: string;
+  description: string;
+  requiredMaterials: string[];
+}
+
 interface WorkflowState {
   step: number;
   selectedReferences: ChannelThumbnail[];
@@ -66,7 +73,8 @@ interface WorkflowState {
   generatedImages: string[];
   isABTest: boolean;
   patternAnalysis: PatternAnalysis | null;
-  modelImages: string[];
+  modelImages: ModelImageInfo[];
+  selectedModelIndex: number | null;
 }
 
 interface TextSuggestion {
@@ -99,6 +107,8 @@ export default function ThumbnailWorkflow() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingModels, setIsGeneratingModels] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const [refinementInstruction, setRefinementInstruction] = useState('');
   
   const [workflow, setWorkflow] = useState<WorkflowState>({
     step: 1,
@@ -111,6 +121,7 @@ export default function ThumbnailWorkflow() {
     isABTest: false,
     patternAnalysis: null,
     modelImages: [],
+    selectedModelIndex: null,
   });
 
   const [textSuggestions, setTextSuggestions] = useState<TextSuggestion[]>([]);
@@ -271,13 +282,19 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
     }
 
     setIsGeneratingModels(true);
-    setWorkflow(prev => ({ ...prev, modelImages: [] }));
+    setWorkflow(prev => ({ ...prev, modelImages: [], selectedModelIndex: null }));
     
     try {
       const pattern = workflow.patternAnalysis;
       const referenceImages = workflow.selectedReferences.map(t => t.thumbnail_url);
       
-      const modelPromises = [1, 2, 3].map(async (num) => {
+      const modelVariations = [
+        { name: 'スタンダード', emphasis: '基本パターンに忠実' },
+        { name: 'インパクト重視', emphasis: '視覚的インパクトを強調' },
+        { name: 'シンプル', emphasis: 'すっきりとした構成' },
+      ];
+
+      const modelPromises = modelVariations.map(async (variation, idx) => {
         const prompt = `YouTubeサムネイルのモデル画像を生成してください。
 
 【パターン分析結果を厳密に適用】
@@ -287,7 +304,9 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
 - レイアウト: ${pattern.layout}
 - 視覚効果: ${pattern.effects}
 
-パターン${num}として、上記の分析結果に基づいたサムネイルのモデル画像を生成してください。
+【バリエーション: ${variation.name}】
+${variation.emphasis}を意識した構成にしてください。
+
 テキストは「サンプル」「SAMPLE」などのダミーテキストを使用してください。
 アスペクト比は16:9（1280x720）で生成してください。`;
 
@@ -302,11 +321,49 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
         });
 
         if (error) throw error;
-        return data.imageUrl;
+
+        const descriptionPrompt = `このサムネイルモデル画像について、以下を分析してJSON形式で回答してください:
+{
+  "description": "構造の説明（テロップの位置、人物配置、背景、色使いなど50文字以内）",
+  "requiredMaterials": ["必要な実写素材1", "必要な実写素材2"]
+}
+
+【${variation.name}】のパターンです。
+- テロップ配置: ${pattern.textPosition}
+- 人物配置: ${pattern.personPosition}
+- 配色: ${pattern.colorScheme}`;
+
+        const { data: descData } = await supabase.functions.invoke('chat', {
+          body: {
+            messages: [{ role: 'user', content: descriptionPrompt }],
+          },
+        });
+
+        let description = `${variation.name}: ${variation.emphasis}`;
+        let requiredMaterials: string[] = [];
+
+        if (descData?.content) {
+          try {
+            const jsonMatch = descData.content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              description = parsed.description || description;
+              requiredMaterials = parsed.requiredMaterials || [];
+            }
+          } catch (e) {
+            console.error('Description parse error:', e);
+          }
+        }
+
+        return {
+          imageUrl: data.imageUrl,
+          description,
+          requiredMaterials,
+        };
       });
 
       const results = await Promise.all(modelPromises);
-      setWorkflow(prev => ({ ...prev, modelImages: results.filter(Boolean) }));
+      setWorkflow(prev => ({ ...prev, modelImages: results.filter(r => r.imageUrl) }));
       toast({ title: '生成完了', description: 'モデル画像を3枚生成しました' });
     } catch (error) {
       console.error('Model generation error:', error);
@@ -314,6 +371,10 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
     } finally {
       setIsGeneratingModels(false);
     }
+  };
+
+  const selectModel = (index: number) => {
+    setWorkflow(prev => ({ ...prev, selectedModelIndex: index }));
   };
 
   const generateSuggestionsFromTitle = async () => {
@@ -399,22 +460,26 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
   };
 
   const proceedToStep4 = () => {
-    if (!workflow.videoTitle.trim()) {
-      toast({ title: 'タイトルを入力', description: '動画タイトルを入力してください', variant: 'destructive' });
+    if (workflow.selectedModelIndex === null) {
+      toast({ title: 'モデルを選択', description: 'モデル画像を1つ選択してください', variant: 'destructive' });
       return;
     }
     setWorkflow(prev => ({ ...prev, step: 4 }));
   };
 
   const proceedToStep5 = () => {
-    if (!workflow.text.trim()) {
-      toast({ title: '文言を入力', description: 'サムネイルの文言を入力してください', variant: 'destructive' });
+    if (!workflow.videoTitle.trim()) {
+      toast({ title: 'タイトルを入力', description: '動画タイトルを入力してください', variant: 'destructive' });
       return;
     }
     setWorkflow(prev => ({ ...prev, step: 5 }));
   };
 
   const proceedToStep6 = () => {
+    if (!workflow.text.trim()) {
+      toast({ title: '文言を入力', description: 'サムネイルの文言を入力してください', variant: 'destructive' });
+      return;
+    }
     setWorkflow(prev => ({ ...prev, step: 6 }));
   };
 
@@ -459,6 +524,11 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         ? `\n\n【登録済み素材（必ず参照）】\n${selfAssets.map(a => `- 自分「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n')}${memberAssets.length > 0 ? '\n' + memberAssets.map(a => `- メンバー「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n') : ''}${characterAssets.length > 0 ? '\n' + characterAssets.map(a => `- キャラクター「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n') : ''}`
         : '';
 
+      const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
+      const modelInfo = selectedModel
+        ? `\n\n【選択されたモデルパターン】\n${selectedModel.description}`
+        : '';
+
       const patternInfo = workflow.patternAnalysis
         ? `\n\n【適用するパターン】
 - テロップ配置: ${workflow.patternAnalysis.textPosition}
@@ -483,7 +553,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         : '';
       
       const prompt = `動画タイトル「${workflow.videoTitle}」のYouTubeサムネイル。
-文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${registeredAssetsInfo}${patternInfo}${competitorInfo}${materialDescText}`;
+文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${registeredAssetsInfo}${modelInfo}${patternInfo}${competitorInfo}${materialDescText}`;
 
       const assetImages = channelAssets.map(a => a.image_url);
       const ownChannelImages = ownChannelRefs.map(t => t.thumbnail_url);
@@ -525,6 +595,62 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
     }
   };
 
+  const refineImage = async (imageUrl: string) => {
+    if (!refinementInstruction.trim()) {
+      toast({ title: '修正指示を入力', description: '修正したい内容を入力してください', variant: 'destructive' });
+      return;
+    }
+
+    setIsRefining(true);
+    try {
+      const prompt = `以下のYouTubeサムネイルを修正してください。
+
+【修正指示】
+${refinementInstruction}
+
+元の設定:
+- 動画タイトル: ${workflow.videoTitle}
+- 文言: ${workflow.text}
+${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layout}` : ''}
+
+修正指示に従って画像を調整してください。アスペクト比16:9を維持してください。`;
+
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { 
+          prompt,
+          referenceImages: [imageUrl],
+          assetCount: 0,
+          ownChannelCount: 0,
+          competitorCount: 1,
+        },
+      });
+
+      if (error) throw error;
+      
+      if (data.imageUrl) {
+        setWorkflow(prev => ({ 
+          ...prev, 
+          generatedImages: [...prev.generatedImages, data.imageUrl] 
+        }));
+        
+        await supabase.from('thumbnails').insert({
+          user_id: user!.id,
+          image_url: data.imageUrl,
+          prompt: `修正: ${refinementInstruction}`,
+          title: workflow.text.slice(0, 100),
+        });
+
+        setRefinementInstruction('');
+        toast({ title: '修正完了', description: '修正版サムネイルが生成されました' });
+      }
+    } catch (error) {
+      console.error('Refine error:', error);
+      toast({ title: 'エラー', description: '画像修正に失敗しました', variant: 'destructive' });
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
   const resetWorkflow = () => {
     setWorkflow({
       step: 1,
@@ -537,9 +663,11 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
       isABTest: false,
       patternAnalysis: null,
       modelImages: [],
+      selectedModelIndex: null,
     });
     setTextSuggestions([]);
     setMaterialSuggestions([]);
+    setRefinementInstruction('');
   };
 
   const downloadImage = async (url: string) => {
@@ -562,12 +690,14 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
   const ownThumbnails = thumbnails.filter(t => t.channel_type === 'own');
   const competitorThumbnails = thumbnails.filter(t => t.channel_type === 'competitor');
 
+  const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
+
   const steps = [
     { num: 1, title: '参考選択', icon: LayoutGrid },
     { num: 2, title: 'パターン分析', icon: Eye },
-    { num: 3, title: 'モデル生成', icon: Sparkles },
-    { num: 4, title: 'タイトル入力', icon: Type },
-    { num: 5, title: '文言決定', icon: Lightbulb },
+    { num: 3, title: 'モデル選択', icon: Sparkles },
+    { num: 4, title: '素材準備', icon: Camera },
+    { num: 5, title: 'タイトル・文言', icon: Type },
     { num: 6, title: 'AI生成', icon: Wand2 },
   ];
 
@@ -796,16 +926,16 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
             </Card>
           )}
 
-          {/* Step 3: Model Images */}
+          {/* Step 3: Model Selection */}
           {workflow.step === 3 && (
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-primary" />
-                  Step 3: モデル画像生成
+                  Step 3: モデル画像を選択
                 </CardTitle>
                 <CardDescription>
-                  分析したパターンに基づいてモデル画像を3枚生成します
+                  3つのパターンから使用するモデルを1つ選んでください
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -815,40 +945,67 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
                   </div>
                 )}
 
-                <Button 
-                  onClick={generateModelImages} 
-                  disabled={isGeneratingModels}
-                  className="w-full gradient-primary"
-                >
-                  {isGeneratingModels ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      モデル画像を生成中...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      モデル画像を3枚生成
-                    </>
-                  )}
-                </Button>
+                {workflow.modelImages.length === 0 && (
+                  <Button 
+                    onClick={generateModelImages} 
+                    disabled={isGeneratingModels}
+                    className="w-full gradient-primary"
+                  >
+                    {isGeneratingModels ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        モデル画像を生成中...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        モデル画像を3枚生成
+                      </>
+                    )}
+                  </Button>
+                )}
 
                 {workflow.modelImages.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="font-semibold">生成されたモデル画像</h4>
-                    <div className="grid grid-cols-3 gap-3">
-                      {workflow.modelImages.map((img, idx) => (
-                        <div key={idx} className="relative group">
-                          <img src={img} alt={`Model ${idx + 1}`} className="aspect-video object-cover rounded-lg" />
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
-                            <Button size="sm" variant="secondary" onClick={() => downloadImage(img)}>
-                              <Download className="w-4 h-4" />
-                            </Button>
+                  <div className="space-y-4">
+                    <h4 className="font-semibold">モデル画像を選択（クリックで選択）</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {workflow.modelImages.map((model, idx) => (
+                        <div 
+                          key={idx} 
+                          onClick={() => selectModel(idx)}
+                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                            workflow.selectedModelIndex === idx
+                              ? 'border-primary ring-2 ring-primary/20'
+                              : 'border-transparent hover:border-primary/50'
+                          }`}
+                        >
+                          <img src={model.imageUrl} alt={`Model ${idx + 1}`} className="aspect-video object-cover" />
+                          {workflow.selectedModelIndex === idx && (
+                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                              <Check className="w-4 h-4 text-primary-foreground" />
+                            </div>
+                          )}
+                          <div className="p-3 bg-background/95 space-y-2">
+                            <Badge className="text-xs">パターン{idx + 1}</Badge>
+                            <p className="text-sm">{model.description}</p>
                           </div>
-                          <Badge className="absolute top-1 left-1 text-xs">パターン{idx + 1}</Badge>
                         </div>
                       ))}
                     </div>
+
+                    <Button 
+                      onClick={generateModelImages} 
+                      disabled={isGeneratingModels}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      {isGeneratingModels ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      別のモデルを生成
+                    </Button>
                   </div>
                 )}
 
@@ -857,7 +1014,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     戻る
                   </Button>
-                  <Button onClick={proceedToStep4} className="gradient-primary">
+                  <Button onClick={proceedToStep4} disabled={workflow.selectedModelIndex === null} className="gradient-primary">
                     次へ
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
@@ -866,166 +1023,56 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
             </Card>
           )}
 
-          {/* Step 4: Video Title */}
+          {/* Step 4: Material Preparation */}
           {workflow.step === 4 && (
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Type className="w-5 h-5 text-primary" />
-                  Step 4: 動画タイトルを入力
+                  <Camera className="w-5 h-5 text-primary" />
+                  Step 4: 必要素材を準備
                 </CardTitle>
                 <CardDescription>
-                  サムネイルを作成する動画のタイトルを入力してください
+                  選択したモデルに必要な素材を用意してください
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">動画タイトル *</label>
-                  <Input
-                    value={workflow.videoTitle}
-                    onChange={(e) => setWorkflow(prev => ({ ...prev, videoTitle: e.target.value }))}
-                    placeholder="例：【衝撃】〇〇を試したら驚きの結果に..."
-                    className="bg-secondary/50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">動画の概要（任意）</label>
-                  <Textarea
-                    value={workflow.videoDescription}
-                    onChange={(e) => setWorkflow(prev => ({ ...prev, videoDescription: e.target.value }))}
-                    placeholder="動画の内容を簡単に説明してください..."
-                    className="bg-secondary/50 min-h-[80px]"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 3 }))}>
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    戻る
-                  </Button>
-                  <Button onClick={proceedToStep5} disabled={!workflow.videoTitle.trim()} className="gradient-primary">
-                    次へ
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step 5: Text Decision */}
-          {workflow.step === 5 && (
-            <Card className="glass">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Lightbulb className="w-5 h-5 text-primary" />
-                  Step 5: 文言を決定
-                </CardTitle>
-                <CardDescription>
-                  サムネイルに表示するパワーワードを決めましょう
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium flex items-center gap-2">
-                    サムネイル文言
-                    {workflow.text && (
-                      <Badge variant="secondary" className="text-xs">
-                        {workflow.text.length}文字
-                      </Badge>
-                    )}
-                  </label>
-                  <div className="flex gap-2 items-start">
-                    <Textarea
-                      value={workflow.text}
-                      onChange={(e) => setWorkflow(prev => ({ ...prev, text: e.target.value }))}
-                      placeholder="例：衝撃、神回、限界突破"
-                      className="min-h-[60px] bg-secondary/50 flex-1"
-                    />
-                    <Button
-                      onClick={generateSuggestionsFromTitle}
-                      disabled={!workflow.videoTitle.trim() || isGeneratingSuggestions}
-                      variant="outline"
-                      className="shrink-0"
-                    >
-                      {isGeneratingSuggestions ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="w-4 h-4" />
+                {selectedModel && (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <img src={selectedModel.imageUrl} alt="Selected model" className="aspect-video object-cover rounded-lg" />
+                    </div>
+                    <div className="space-y-3">
+                      <div className="p-3 bg-secondary/30 rounded-lg">
+                        <h5 className="font-medium text-sm mb-1">構造説明</h5>
+                        <p className="text-sm text-muted-foreground">{selectedModel.description}</p>
+                      </div>
+                      {selectedModel.requiredMaterials.length > 0 && (
+                        <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+                          <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
+                            <Lightbulb className="w-4 h-4 text-yellow-500" />
+                            必要な素材
+                          </h5>
+                          <ul className="space-y-1">
+                            {selectedModel.requiredMaterials.map((material, idx) => (
+                              <li key={idx} className="text-sm flex items-start gap-2">
+                                <span className="text-primary">•</span>
+                                <span>{material}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
-                      <span className="ml-2">AI提案</span>
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">推奨: 2〜6文字の短いパワーワード</p>
-                </div>
-
-                {textSuggestions.length > 0 && (
-                  <div className="space-y-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
-                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                      <Lightbulb className="w-4 h-4 text-yellow-500" />
-                      AIの文言提案（クリックで使用）
-                    </h4>
-                    <div className="space-y-2">
-                      {textSuggestions.map((suggestion, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setWorkflow(prev => ({ ...prev, text: suggestion.text }))}
-                          className={`w-full text-left p-3 rounded-lg border transition-all ${
-                            workflow.text === suggestion.text
-                              ? 'border-primary bg-primary/10'
-                              : 'border-border hover:border-primary/50 hover:bg-secondary/50'
-                          }`}
-                        >
-                          <p className="font-bold text-lg">{suggestion.text}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{suggestion.reason}</p>
-                        </button>
-                      ))}
                     </div>
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pt-4">
-                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 4 }))}>
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    戻る
-                  </Button>
-                  <Button onClick={proceedToStep6} disabled={!workflow.text.trim()} className="gradient-primary">
-                    次へ
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step 6: AI Generation */}
-          {workflow.step === 6 && (
-            <Card className="glass">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wand2 className="w-5 h-5 text-primary" />
-                  Step 6: サムネイルを生成
-                </CardTitle>
-                <CardDescription>
-                  パターン分析結果を適用してサムネイルを生成します
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="p-4 bg-secondary/30 rounded-lg space-y-2">
-                  <p className="text-sm"><span className="font-medium">動画タイトル:</span> {workflow.videoTitle}</p>
-                  <p className="text-sm"><span className="font-medium">文言:</span> {workflow.text}</p>
-                  <p className="text-sm"><span className="font-medium">参考サムネイル:</span> {workflow.selectedReferences.length}枚</p>
-                  {workflow.patternAnalysis && (
-                    <p className="text-sm"><span className="font-medium">適用パターン:</span> {workflow.patternAnalysis.layout}</p>
-                  )}
-                  <p className="text-sm"><span className="font-medium">登録素材:</span> {channelAssets.length}枚</p>
-                </div>
-
-                {/* Material Upload */}
                 <div className="space-y-3">
-                  <label className="text-sm font-medium">追加素材（任意）</label>
+                  <label className="text-sm font-medium">素材をアップロード（任意）</label>
                   <label className="block">
-                    <div className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors">
-                      <Upload className="w-6 h-6 mx-auto text-muted-foreground mb-1" />
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors">
+                      <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
                       <p className="text-sm text-muted-foreground">クリックして素材をアップロード</p>
+                      <p className="text-xs text-muted-foreground mt-1">実写写真、商品画像など</p>
                     </div>
                     <input type="file" accept="image/*" multiple onChange={handleMaterialUpload} className="hidden" />
                   </label>
@@ -1044,6 +1091,153 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
                       ))}
                     </div>
                   )}
+                </div>
+
+                <div className="flex items-center justify-between pt-4">
+                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 3 }))}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    戻る
+                  </Button>
+                  <Button onClick={proceedToStep5} className="gradient-primary">
+                    次へ
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Step 5: Title & Text */}
+          {workflow.step === 5 && (
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Type className="w-5 h-5 text-primary" />
+                  Step 5: タイトルと文言を入力
+                </CardTitle>
+                <CardDescription>
+                  動画タイトルとサムネイルに表示する文言を決めましょう
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">動画タイトル *</label>
+                  <Input
+                    value={workflow.videoTitle}
+                    onChange={(e) => setWorkflow(prev => ({ ...prev, videoTitle: e.target.value }))}
+                    placeholder="例：【衝撃】〇〇を試したら驚きの結果に..."
+                    className="bg-secondary/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">動画の概要（任意）</label>
+                  <Textarea
+                    value={workflow.videoDescription}
+                    onChange={(e) => setWorkflow(prev => ({ ...prev, videoDescription: e.target.value }))}
+                    placeholder="動画の内容を簡単に説明してください..."
+                    className="bg-secondary/50 min-h-[60px]"
+                  />
+                </div>
+
+                <div className="border-t pt-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      サムネイル文言 *
+                      {workflow.text && (
+                        <Badge variant="secondary" className="text-xs">
+                          {workflow.text.length}文字
+                        </Badge>
+                      )}
+                    </label>
+                    <div className="flex gap-2 items-start">
+                      <Textarea
+                        value={workflow.text}
+                        onChange={(e) => setWorkflow(prev => ({ ...prev, text: e.target.value }))}
+                        placeholder="例：衝撃、神回、限界突破"
+                        className="min-h-[60px] bg-secondary/50 flex-1"
+                      />
+                      <Button
+                        onClick={generateSuggestionsFromTitle}
+                        disabled={!workflow.videoTitle.trim() || isGeneratingSuggestions}
+                        variant="outline"
+                        className="shrink-0"
+                      >
+                        {isGeneratingSuggestions ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        <span className="ml-2">AI提案</span>
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">推奨: 2〜6文字の短いパワーワード</p>
+                  </div>
+
+                  {textSuggestions.length > 0 && (
+                    <div className="space-y-3 p-4 bg-primary/5 rounded-lg border border-primary/20 mt-4">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Lightbulb className="w-4 h-4 text-yellow-500" />
+                        AIの文言提案（クリックで使用）
+                      </h4>
+                      <div className="space-y-2">
+                        {textSuggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setWorkflow(prev => ({ ...prev, text: suggestion.text }))}
+                            className={`w-full text-left p-3 rounded-lg border transition-all ${
+                              workflow.text === suggestion.text
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                            }`}
+                          >
+                            <p className="font-bold text-lg">{suggestion.text}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{suggestion.reason}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-4">
+                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 4 }))}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    戻る
+                  </Button>
+                  <Button onClick={proceedToStep6} disabled={!workflow.videoTitle.trim() || !workflow.text.trim()} className="gradient-primary">
+                    次へ
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Step 6: AI Generation */}
+          {workflow.step === 6 && (
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wand2 className="w-5 h-5 text-primary" />
+                  Step 6: サムネイルを生成
+                </CardTitle>
+                <CardDescription>
+                  設定に基づいてサムネイルを生成します
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="p-4 bg-secondary/30 rounded-lg space-y-2">
+                  <p className="text-sm"><span className="font-medium">動画タイトル:</span> {workflow.videoTitle}</p>
+                  <p className="text-sm"><span className="font-medium">文言:</span> {workflow.text}</p>
+                  <p className="text-sm"><span className="font-medium">参考サムネイル:</span> {workflow.selectedReferences.length}枚</p>
+                  {workflow.patternAnalysis && (
+                    <p className="text-sm"><span className="font-medium">適用パターン:</span> {workflow.patternAnalysis.layout}</p>
+                  )}
+                  {selectedModel && (
+                    <p className="text-sm"><span className="font-medium">選択モデル:</span> {selectedModel.description.slice(0, 30)}...</p>
+                  )}
+                  <p className="text-sm"><span className="font-medium">アップロード素材:</span> {workflow.materials.length}枚</p>
+                  <p className="text-sm"><span className="font-medium">登録素材:</span> {channelAssets.length}枚</p>
                 </div>
 
                 <Button 
@@ -1069,17 +1263,52 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
                     <h4 className="font-semibold">生成されたサムネイル</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {workflow.generatedImages.map((img, idx) => (
-                        <div key={idx} className="relative group">
-                          <img src={img} alt={`Generated ${idx + 1}`} className="aspect-video object-cover rounded-lg" />
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                            <Button size="sm" variant="secondary" onClick={() => downloadImage(img)}>
-                              <Download className="w-4 h-4 mr-1" />
-                              ダウンロード
-                            </Button>
+                        <div key={idx} className="space-y-2">
+                          <div className="relative group">
+                            <img src={img} alt={`Generated ${idx + 1}`} className="aspect-video object-cover rounded-lg" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                              <Button size="sm" variant="secondary" onClick={() => downloadImage(img)}>
+                                <Download className="w-4 h-4 mr-1" />
+                                ダウンロード
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Refinement Section */}
+                    <div className="p-4 bg-secondary/30 rounded-lg space-y-3">
+                      <h5 className="font-medium flex items-center gap-2">
+                        <Pencil className="w-4 h-4 text-primary" />
+                        画像を修正する
+                      </h5>
+                      <Textarea
+                        value={refinementInstruction}
+                        onChange={(e) => setRefinementInstruction(e.target.value)}
+                        placeholder="例：文字をもっと大きく、背景を暗く、人物を右に寄せて..."
+                        className="bg-background/50 min-h-[60px]"
+                      />
+                      <Button
+                        onClick={() => refineImage(workflow.generatedImages[workflow.generatedImages.length - 1])}
+                        disabled={isRefining || !refinementInstruction.trim()}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        {isRefining ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            修正中...
+                          </>
+                        ) : (
+                          <>
+                            <Pencil className="w-4 h-4 mr-2" />
+                            修正指示で再生成
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
                     <div className="flex gap-2">
                       <Button onClick={generateThumbnail} disabled={isGenerating} variant="outline">
                         <RefreshCw className="w-4 h-4 mr-2" />
@@ -1103,7 +1332,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
           )}
 
           {/* Current Settings Summary */}
-          {workflow.step >= 4 && (workflow.videoTitle || workflow.text) && (
+          {workflow.step >= 5 && (workflow.videoTitle || workflow.text) && (
             <Card className="glass">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">現在の設定</CardTitle>
