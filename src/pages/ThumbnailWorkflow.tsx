@@ -63,11 +63,22 @@ interface PatternAnalysis {
   effects: string;
 }
 
+interface MaterialSuggestion {
+  name: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface TextSuggestionItem {
+  text: string;
+  reason: string;
+}
+
 interface ModelImageInfo {
   imageUrl: string;
   description: string;
-  requiredMaterials: string[];
-  suggestedText?: string;
+  requiredMaterials: MaterialSuggestion[];
+  suggestedTexts: TextSuggestionItem[];
 }
 
 interface WorkflowState {
@@ -121,6 +132,8 @@ export default function ThumbnailWorkflow() {
   const [refinementInstruction, setRefinementInstruction] = useState('');
   const [textSuggestions, setTextSuggestions] = useState<TextSuggestion[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [modelFeedback, setModelFeedback] = useState('');
+  const [isRegeneratingModel, setIsRegeneratingModel] = useState(false);
   
   const [workflow, setWorkflow] = useState<WorkflowState>({
     step: 1,
@@ -354,7 +367,7 @@ ${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
         if (error) throw error;
 
-        // 生成されたモデル画像から必要素材を分析
+        // 生成されたモデル画像から必要素材・文言を複数提案
         const { data: descData } = await supabase.functions.invoke('chat', {
           body: {
             messages: [{ 
@@ -365,20 +378,25 @@ ${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 {
   "description": "このモデルの構造説明（50文字以内）",
   "requiredMaterials": [
-    "本当に必要な素材1（例：演者の驚き顔の写真）",
-    "本当に必要な素材2（例：商品のクローズアップ画像）"
+    {"name": "素材名", "description": "具体的な説明", "priority": "high"},
+    {"name": "素材名2", "description": "具体的な説明", "priority": "medium"}
   ],
-  "suggestedText": "タイトル・内容から導出した最適な文言（2〜6文字）"
+  "suggestedTexts": [
+    {"text": "文言1（2〜6文字）", "reason": "選んだ理由"},
+    {"text": "文言2（2〜6文字）", "reason": "選んだ理由"},
+    {"text": "文言3（2〜6文字）", "reason": "選んだ理由"}
+  ]
 }
 
-※必要素材は、この動画のサムネイル作成に本当に必要なもののみ箇条書きで。不要な素材は含めない。` 
+※必要素材は本当に必要なもののみ（優先度: high/medium/low）
+※文言は3つ以上提案` 
             }],
           },
         });
 
         let description = `${variation.name}: ${variation.emphasis}`;
-        let requiredMaterials: string[] = [];
-        let suggestedText = '';
+        let requiredMaterials: MaterialSuggestion[] = [];
+        let suggestedTexts: TextSuggestionItem[] = [];
 
         if (descData?.content) {
           try {
@@ -387,12 +405,12 @@ ${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
               const parsed = JSON.parse(match[0]);
               description = parsed.description || description;
               requiredMaterials = parsed.requiredMaterials || [];
-              suggestedText = parsed.suggestedText || '';
+              suggestedTexts = parsed.suggestedTexts || [];
             }
           } catch {}
         }
 
-        return { imageUrl: data.imageUrl, description, requiredMaterials, suggestedText };
+        return { imageUrl: data.imageUrl, description, requiredMaterials, suggestedTexts };
       });
 
       const results = await Promise.all(modelPromises);
@@ -403,6 +421,103 @@ ${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
       toast({ title: 'エラー', description: 'モデル画像の生成に失敗しました', variant: 'destructive' });
     } finally {
       setIsGeneratingModels(false);
+    }
+  };
+
+  // モデル修正フィードバックで再生成
+  const regenerateModelWithFeedback = async () => {
+    if (!modelFeedback.trim() || workflow.selectedModelIndex === null) return;
+    
+    setIsRegeneratingModel(true);
+    try {
+      const pattern = workflow.patternAnalysis;
+      const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
+      const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
+      const referenceImages = [...ownChannelRefs, ...competitorRefs].map(t => t.thumbnail_url);
+      const referenceTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean).slice(0, 5);
+      
+      const prompt = `YouTubeサムネイルのモデル画像を修正生成。
+
+【修正指示】
+${modelFeedback}
+
+【動画情報】
+タイトル: ${workflow.videoTitle}
+${workflow.videoDescription ? `内容: ${workflow.videoDescription}` : ''}
+
+【参考動画タイトル】
+${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+【パターン分析結果（必ず踏襲）】
+- テロップ配置: ${pattern?.textPosition || ''}
+- 配色: ${pattern?.colorScheme || ''}
+- 人物配置: ${pattern?.personPosition || ''}
+- レイアウト: ${pattern?.layout || ''}
+- 効果: ${pattern?.effects || ''}
+
+【生成ルール】
+- 修正指示を反映しつつ、パターン分析の構図を踏襲
+- アスペクト比: 16:9（1280x720）`;
+
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { 
+          prompt,
+          referenceImages: referenceImages.slice(0, 5),
+          assetCount: 0,
+          ownChannelCount: ownChannelRefs.length,
+          competitorCount: competitorRefs.length,
+        },
+      });
+
+      if (error) throw error;
+
+      // 分析
+      const { data: descData } = await supabase.functions.invoke('chat', {
+        body: {
+          messages: [{ 
+            role: 'user', 
+            content: `動画タイトル「${workflow.videoTitle}」のサムネイルモデルを分析。
+JSON形式で回答:
+{
+  "description": "構造説明（50文字以内）",
+  "requiredMaterials": [{"name": "素材名", "description": "説明", "priority": "high"}],
+  "suggestedTexts": [{"text": "文言（2〜6文字）", "reason": "理由"}]
+}` 
+          }],
+        },
+      });
+
+      let description = '修正版モデル';
+      let requiredMaterials: MaterialSuggestion[] = [];
+      let suggestedTexts: TextSuggestionItem[] = [];
+
+      if (descData?.content) {
+        try {
+          const match = descData.content.match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            description = parsed.description || description;
+            requiredMaterials = parsed.requiredMaterials || [];
+            suggestedTexts = parsed.suggestedTexts || [];
+          }
+        } catch {}
+      }
+
+      const newModel: ModelImageInfo = { imageUrl: data.imageUrl, description, requiredMaterials, suggestedTexts };
+      
+      setWorkflow(prev => {
+        const newImages = [...prev.modelImages];
+        newImages[prev.selectedModelIndex!] = newModel;
+        return { ...prev, modelImages: newImages };
+      });
+      
+      setModelFeedback('');
+      toast({ title: '修正完了', description: 'モデル画像を修正しました' });
+    } catch (error) {
+      console.error('Regenerate error:', error);
+      toast({ title: 'エラー', description: 'モデル修正に失敗しました', variant: 'destructive' });
+    } finally {
+      setIsRegeneratingModel(false);
     }
   };
 
@@ -944,9 +1059,33 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                         </div>
                       ))}
                     </div>
-                    <Button onClick={generateModelImages} disabled={isGeneratingModels} variant="outline" className="w-full">
-                      <RefreshCw className="w-4 h-4 mr-2" />別のモデルを生成
-                    </Button>
+                    
+                    {/* モデル修正フィードバック */}
+                    <div className="p-4 bg-secondary/30 rounded-lg space-y-3">
+                      <h5 className="font-medium flex items-center gap-2">
+                        <Pencil className="w-4 h-4 text-primary" />
+                        モデルを修正
+                      </h5>
+                      <Textarea
+                        value={modelFeedback}
+                        onChange={(e) => setModelFeedback(e.target.value)}
+                        placeholder="例：人物を左側に配置して、文字をもっと大きく..."
+                        className="bg-background/50 min-h-[60px]"
+                      />
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={regenerateModelWithFeedback} 
+                          disabled={isRegeneratingModel || !modelFeedback.trim()} 
+                          variant="outline"
+                          className="flex-1"
+                        >
+                          {isRegeneratingModel ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />修正中...</> : <><Pencil className="w-4 h-4 mr-2" />修正して再生成</>}
+                        </Button>
+                        <Button onClick={generateModelImages} disabled={isGeneratingModels} variant="outline">
+                          <RefreshCw className="w-4 h-4 mr-2" />全て再生成
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -976,29 +1115,52 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                         <h5 className="font-medium text-sm mb-1">構造説明</h5>
                         <p className="text-sm text-muted-foreground">{selectedModel.description}</p>
                       </div>
-                      {selectedModel.suggestedText && (
+                      {selectedModel.suggestedTexts && selectedModel.suggestedTexts.length > 0 && (
                         <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-                          <h5 className="font-medium text-sm mb-1 flex items-center gap-2">
-                            <Type className="w-4 h-4 text-green-500" />推奨文言
+                          <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
+                            <Type className="w-4 h-4 text-green-500" />推奨文言（複数提案）
                           </h5>
-                          <button
-                            onClick={() => setWorkflow(prev => ({ ...prev, text: selectedModel.suggestedText || '' }))}
-                            className="text-lg font-bold text-green-600 dark:text-green-400 hover:underline"
-                          >
-                            {selectedModel.suggestedText}
-                          </button>
+                          <div className="space-y-2">
+                            {selectedModel.suggestedTexts.map((s, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setWorkflow(prev => ({ ...prev, text: s.text }))}
+                                className={`w-full text-left p-2 rounded-lg border transition-all ${
+                                  workflow.text === s.text ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
+                                }`}
+                              >
+                                <p className="font-bold">{s.text}</p>
+                                <p className="text-xs text-muted-foreground">{s.reason}</p>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                       {selectedModel.requiredMaterials.length > 0 && (
                         <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
                           <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
-                            <Lightbulb className="w-4 h-4 text-yellow-500" />必要な素材（箇条書き）
+                            <Lightbulb className="w-4 h-4 text-yellow-500" />必要な素材（優先度順）
                           </h5>
-                          <ul className="space-y-1">
+                          <div className="space-y-2">
                             {selectedModel.requiredMaterials.map((m, i) => (
-                              <li key={i} className="text-sm flex gap-2"><span className="text-primary">•</span>{m}</li>
+                              <div key={i} className="flex items-start gap-2 p-2 rounded bg-background/50">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs shrink-0 ${
+                                    m.priority === 'high' ? 'border-red-500 text-red-500' :
+                                    m.priority === 'medium' ? 'border-yellow-500 text-yellow-500' :
+                                    'border-muted-foreground'
+                                  }`}
+                                >
+                                  {m.priority === 'high' ? '必須' : m.priority === 'medium' ? '推奨' : '任意'}
+                                </Badge>
+                                <div>
+                                  <p className="text-sm font-medium">{m.name}</p>
+                                  <p className="text-xs text-muted-foreground">{m.description}</p>
+                                </div>
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         </div>
                       )}
                     </div>
