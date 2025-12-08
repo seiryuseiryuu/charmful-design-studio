@@ -23,6 +23,8 @@ import {
   Lightbulb,
   Eye,
   Pencil,
+  Youtube,
+  Search,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -35,11 +37,14 @@ interface ChannelThumbnail {
   channel_type?: string;
 }
 
-interface Channel {
+interface ChannelInput {
   id: string;
-  channel_name: string;
-  channel_url: string | null;
-  channel_type: string;
+  url: string;
+  name: string;
+  type: 'own' | 'competitor';
+  icon?: string;
+  thumbnails: ChannelThumbnail[];
+  isLoading: boolean;
 }
 
 interface MaterialItem {
@@ -82,28 +87,28 @@ interface TextSuggestion {
   reason: string;
 }
 
-interface MaterialSuggestion {
-  type: string;
-  description: string;
-  examples: string[];
-}
-
-interface ChannelAsset {
-  id: string;
-  name: string;
-  asset_type: 'self' | 'member' | 'character' | 'channel_icon' | 'other';
-  image_url: string;
-  description: string | null;
-}
-
 export default function ThumbnailWorkflow() {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [thumbnails, setThumbnails] = useState<ChannelThumbnail[]>([]);
-  const [isLoadingThumbnails, setIsLoadingThumbnails] = useState(false);
-  const [isFetchingFromYouTube, setIsFetchingFromYouTube] = useState(false);
+  // チャンネル入力（毎回入力）
+  const [ownChannel, setOwnChannel] = useState<ChannelInput>({
+    id: 'own',
+    url: '',
+    name: '',
+    type: 'own',
+    thumbnails: [],
+    isLoading: false,
+  });
+  const [competitorChannel, setCompetitorChannel] = useState<ChannelInput>({
+    id: 'competitor',
+    url: '',
+    name: '',
+    type: 'competitor',
+    thumbnails: [],
+    isLoading: false,
+  });
+  
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingModels, setIsGeneratingModels] = useState(false);
@@ -125,90 +130,62 @@ export default function ThumbnailWorkflow() {
   });
 
   const [textSuggestions, setTextSuggestions] = useState<TextSuggestion[]>([]);
-  const [materialSuggestions, setMaterialSuggestions] = useState<MaterialSuggestion[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
-  const [channelAssets, setChannelAssets] = useState<ChannelAsset[]>([]);
 
-  useEffect(() => {
-    fetchChannels();
-    fetchStoredThumbnails();
-    fetchChannelAssets();
-  }, [user]);
-
-  const fetchChannelAssets = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('channel_assets')
-      .select('*')
-      .eq('user_id', user.id);
-    setChannelAssets(data || []);
-  };
-
-  const fetchChannels = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('channel_settings')
-      .select('*')
-      .eq('user_id', user.id);
-    setChannels((data || []) as Channel[]);
-  };
-
-  const fetchStoredThumbnails = async () => {
-    if (!user) return;
-    setIsLoadingThumbnails(true);
-    
-    const { data: channelsData } = await supabase
-      .from('channel_settings')
-      .select('id, channel_name, channel_type')
-      .eq('user_id', user.id);
-
-    if (channelsData) {
-      const allThumbnails: ChannelThumbnail[] = [];
-      
-      for (const channel of channelsData) {
-        const { data: thumbs } = await supabase
-          .from('channel_thumbnails')
-          .select('*')
-          .eq('channel_id', channel.id)
-          .order('published_at', { ascending: false })
-          .limit(20);
-        
-        if (thumbs) {
-          allThumbnails.push(...thumbs.map(t => ({
-            ...t,
-            channel_name: channel.channel_name,
-            channel_type: channel.channel_type,
-          })));
-        }
-      }
-      
-      setThumbnails(allThumbnails);
+  const fetchChannelThumbnails = async (channel: ChannelInput, setChannel: React.Dispatch<React.SetStateAction<ChannelInput>>) => {
+    if (!channel.url.trim()) {
+      toast({ title: 'エラー', description: 'チャンネルURLを入力してください', variant: 'destructive' });
+      return;
     }
-    setIsLoadingThumbnails(false);
-  };
 
-  const fetchYouTubeThumbnails = async (channelId: string) => {
-    setIsFetchingFromYouTube(true);
+    setChannel(prev => ({ ...prev, isLoading: true }));
+    
     try {
-      const channel = channels.find(c => c.id === channelId);
-      if (!channel?.channel_url) {
-        toast({ title: 'エラー', description: 'チャンネルURLが設定されていません', variant: 'destructive' });
-        return;
+      // チャンネル情報を取得
+      const infoResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-channel-info`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelUrl: channel.url }),
+        }
+      );
+      const infoData = await infoResponse.json();
+      
+      if (infoData.success) {
+        setChannel(prev => ({
+          ...prev,
+          name: infoData.channelName || prev.name,
+          icon: infoData.channelIcon,
+        }));
       }
 
+      // サムネイルを取得
       const { data, error } = await supabase.functions.invoke('fetch-youtube-thumbnails', {
-        body: { channelUrl: channel.channel_url, channelId },
+        body: { 
+          channelUrl: channel.url, 
+          channelId: channel.id,
+          saveToDb: false, // DBに保存しない
+        },
       });
 
       if (error) throw error;
-      
-      toast({ title: '取得完了', description: `${data.count}件のサムネイルを取得しました` });
-      fetchStoredThumbnails();
+
+      const thumbnails: ChannelThumbnail[] = (data.thumbnails || []).slice(0, 20).map((t: any, idx: number) => ({
+        id: `${channel.id}-${idx}`,
+        video_id: t.videoId || `video-${idx}`,
+        video_title: t.title || '',
+        thumbnail_url: t.thumbnailUrl || t.thumbnail_url,
+        channel_name: infoData.channelName || channel.name,
+        channel_type: channel.type,
+      }));
+
+      setChannel(prev => ({ ...prev, thumbnails, isLoading: false }));
+      toast({ title: '取得完了', description: `${thumbnails.length}件のサムネイルを取得しました` });
     } catch (error) {
       console.error('Fetch error:', error);
       toast({ title: 'エラー', description: 'サムネイルの取得に失敗しました', variant: 'destructive' });
-    } finally {
-      setIsFetchingFromYouTube(false);
+      setChannel(prev => ({ ...prev, isLoading: false }));
     }
   };
 
@@ -407,9 +384,6 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
     {"text": "キーワード1", "reason": "なぜクリックされるか"},
     {"text": "キーワード2", "reason": "なぜクリックされるか"},
     {"text": "キーワード3", "reason": "なぜクリックされるか"}
-  ],
-  "materialSuggestions": [
-    {"type": "素材", "description": "AIでは生成が難しい素材の説明", "examples": []}
   ]
 }
 
@@ -417,8 +391,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
 1. 文言は2〜6文字の超短いパワーワード（例: 「衝撃」「神回」「ヤバすぎ」「最強」「禁断」「激変」「限界突破」）
 2. 感情を刺激する言葉を使う（驚き、好奇心、緊急性、独占感）
 3. 数字があれば活用（「100万」「1位」「99%」など）
-4. 疑問形や煽り表現も効果的（「なぜ？」「マジか」「嘘だろ」）
-5. 素材提案はAI画像生成では作れないものだけ（実写の本人写真、特定の商品など）`
+4. 疑問形や煽り表現も効果的（「なぜ？」「マジか」「嘘だろ」）`
           }],
         },
       });
@@ -430,7 +403,6 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           setTextSuggestions(parsed.textSuggestions || []);
-          setMaterialSuggestions(parsed.materialSuggestions || []);
         }
       } catch (parseError) {
         console.error('Parse error:', parseError);
@@ -515,14 +487,6 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
     try {
       const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
       const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
-      
-      const selfAssets = channelAssets.filter(a => a.asset_type === 'self');
-      const memberAssets = channelAssets.filter(a => a.asset_type === 'member');
-      const characterAssets = channelAssets.filter(a => a.asset_type === 'character');
-      
-      const registeredAssetsInfo = channelAssets.length > 0
-        ? `\n\n【登録済み素材（必ず参照）】\n${selfAssets.map(a => `- 自分「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n')}${memberAssets.length > 0 ? '\n' + memberAssets.map(a => `- メンバー「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n') : ''}${characterAssets.length > 0 ? '\n' + characterAssets.map(a => `- キャラクター「${a.name}」${a.description ? `: ${a.description}` : ''}`).join('\n') : ''}`
-        : '';
 
       const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
       const modelInfo = selectedModel
@@ -542,9 +506,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         ? `\n使用素材: ${workflow.materials.map(m => m.description || '素材').join('、')}`
         : '';
       
-      const personInfo = selfAssets.length > 0
-        ? `\n登場人物: 登録された「自分」の画像に写っている人物をメインキャラクターとして使用してください。`
-        : ownChannelRefs.length > 0
+      const personInfo = ownChannelRefs.length > 0
         ? `\n登場人物: 参考サムネイル（自チャンネル${ownChannelRefs.length}枚）に登場する人物と同じ人物を使用してください。`
         : '';
       
@@ -553,18 +515,17 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         : '';
       
       const prompt = `動画タイトル「${workflow.videoTitle}」のYouTubeサムネイル。
-文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${registeredAssetsInfo}${modelInfo}${patternInfo}${competitorInfo}${materialDescText}`;
+文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${modelInfo}${patternInfo}${competitorInfo}${materialDescText}`;
 
-      const assetImages = channelAssets.map(a => a.image_url);
       const ownChannelImages = ownChannelRefs.map(t => t.thumbnail_url);
       const competitorImages = competitorRefs.map(t => t.thumbnail_url);
-      const allReferenceImages = [...assetImages, ...ownChannelImages, ...competitorImages];
+      const allReferenceImages = [...ownChannelImages, ...competitorImages];
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { 
           prompt,
           referenceImages: allReferenceImages,
-          assetCount: assetImages.length,
+          assetCount: 0,
           ownChannelCount: ownChannelImages.length,
           competitorCount: competitorImages.length,
         },
@@ -652,6 +613,22 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
   };
 
   const resetWorkflow = () => {
+    setOwnChannel({
+      id: 'own',
+      url: '',
+      name: '',
+      type: 'own',
+      thumbnails: [],
+      isLoading: false,
+    });
+    setCompetitorChannel({
+      id: 'competitor',
+      url: '',
+      name: '',
+      type: 'competitor',
+      thumbnails: [],
+      isLoading: false,
+    });
     setWorkflow({
       step: 1,
       selectedReferences: [],
@@ -666,7 +643,6 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
       selectedModelIndex: null,
     });
     setTextSuggestions([]);
-    setMaterialSuggestions([]);
     setRefinementInstruction('');
   };
 
@@ -687,13 +663,11 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
     }
   };
 
-  const ownThumbnails = thumbnails.filter(t => t.channel_type === 'own');
-  const competitorThumbnails = thumbnails.filter(t => t.channel_type === 'competitor');
-
+  const allThumbnails = [...ownChannel.thumbnails, ...competitorChannel.thumbnails];
   const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
 
   const steps = [
-    { num: 1, title: '参考選択', icon: LayoutGrid },
+    { num: 1, title: 'チャンネル入力', icon: Youtube },
     { num: 2, title: 'パターン分析', icon: Eye },
     { num: 3, title: 'モデル選択', icon: Sparkles },
     { num: 4, title: '素材準備', icon: Camera },
@@ -712,7 +686,7 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
               サムネイル制作ワークフロー
             </h1>
             <p className="text-muted-foreground mt-1">
-              参考動画からパターンを分析してサムネイルを作成
+              チャンネルを入力してパターン分析からサムネイルを作成
             </p>
           </div>
           <Button variant="outline" onClick={resetWorkflow}>
@@ -748,83 +722,161 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
 
         {/* Step Content */}
         <div className="space-y-6">
-          {/* Step 1: Reference Selection */}
+          {/* Step 1: Channel Input & Reference Selection */}
           {workflow.step === 1 && (
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <LayoutGrid className="w-5 h-5 text-primary" />
-                  Step 1: 参考サムネイルを選択（最大10枚）
+                  <Youtube className="w-5 h-5 text-primary" />
+                  Step 1: チャンネルを入力して参考サムネイルを選択（最大10枚）
                 </CardTitle>
                 <CardDescription>
-                  自分のチャンネルと競合チャンネルから参考にしたいサムネイルを選んでください
+                  自分のチャンネルと競合チャンネルのURLを入力してサムネイルを取得
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <Tabs defaultValue="own" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="own">自分のチャンネル ({ownThumbnails.length})</TabsTrigger>
-                    <TabsTrigger value="competitor">競合チャンネル ({competitorThumbnails.length})</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="own" className="mt-4">
-                    {ownThumbnails.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">
-                        サムネイルがありません。チャンネル設定からYouTubeサムネイルを取得してください。
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        {ownThumbnails.map(thumb => (
-                          <div
-                            key={thumb.id}
-                            onClick={() => toggleReferenceSelection(thumb)}
-                            className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                              workflow.selectedReferences.some(t => t.id === thumb.id)
-                                ? 'border-primary ring-2 ring-primary/20'
-                                : 'border-transparent hover:border-primary/50'
-                            }`}
-                          >
-                            <img src={thumb.thumbnail_url} alt={thumb.video_title} className="aspect-video object-cover" />
-                            <Badge className="absolute bottom-1 left-1 text-xs bg-blue-500/80">自分</Badge>
-                            {workflow.selectedReferences.some(t => t.id === thumb.id) && (
-                              <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                                <Check className="w-3 h-3 text-primary-foreground" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+              <CardContent className="space-y-6">
+                {/* Channel Input Section */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* Own Channel */}
+                  <div className="p-4 border border-border rounded-lg space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-blue-500/80">自分のチャンネル</Badge>
+                      {ownChannel.icon && (
+                        <img src={ownChannel.icon} alt="" className="w-6 h-6 rounded-full" />
+                      )}
+                      {ownChannel.name && (
+                        <span className="text-sm text-muted-foreground">{ownChannel.name}</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        value={ownChannel.url}
+                        onChange={(e) => setOwnChannel(prev => ({ ...prev, url: e.target.value }))}
+                        placeholder="https://youtube.com/@..."
+                        className="flex-1 bg-secondary/50"
+                      />
+                      <Button
+                        onClick={() => fetchChannelThumbnails(ownChannel, setOwnChannel)}
+                        disabled={ownChannel.isLoading || !ownChannel.url.trim()}
+                        size="icon"
+                        variant="outline"
+                      >
+                        {ownChannel.isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Search className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {ownChannel.thumbnails.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{ownChannel.thumbnails.length}件取得済み</p>
                     )}
-                  </TabsContent>
-                  <TabsContent value="competitor" className="mt-4">
-                    {competitorThumbnails.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">
-                        競合サムネイルがありません。チャンネル設定から競合チャンネルを追加してください。
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        {competitorThumbnails.map(thumb => (
-                          <div
-                            key={thumb.id}
-                            onClick={() => toggleReferenceSelection(thumb)}
-                            className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                              workflow.selectedReferences.some(t => t.id === thumb.id)
-                                ? 'border-primary ring-2 ring-primary/20'
-                                : 'border-transparent hover:border-primary/50'
-                            }`}
-                          >
-                            <img src={thumb.thumbnail_url} alt={thumb.video_title} className="aspect-video object-cover" />
-                            <Badge className="absolute bottom-1 left-1 text-xs bg-orange-500/80">競合</Badge>
-                            {workflow.selectedReferences.some(t => t.id === thumb.id) && (
-                              <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                                <Check className="w-3 h-3 text-primary-foreground" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                  </div>
+
+                  {/* Competitor Channel */}
+                  <div className="p-4 border border-border rounded-lg space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-orange-500/80">競合チャンネル</Badge>
+                      {competitorChannel.icon && (
+                        <img src={competitorChannel.icon} alt="" className="w-6 h-6 rounded-full" />
+                      )}
+                      {competitorChannel.name && (
+                        <span className="text-sm text-muted-foreground">{competitorChannel.name}</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        value={competitorChannel.url}
+                        onChange={(e) => setCompetitorChannel(prev => ({ ...prev, url: e.target.value }))}
+                        placeholder="https://youtube.com/@..."
+                        className="flex-1 bg-secondary/50"
+                      />
+                      <Button
+                        onClick={() => fetchChannelThumbnails(competitorChannel, setCompetitorChannel)}
+                        disabled={competitorChannel.isLoading || !competitorChannel.url.trim()}
+                        size="icon"
+                        variant="outline"
+                      >
+                        {competitorChannel.isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Search className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {competitorChannel.thumbnails.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{competitorChannel.thumbnails.length}件取得済み</p>
                     )}
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                </div>
+
+                {/* Thumbnail Selection */}
+                {allThumbnails.length > 0 && (
+                  <Tabs defaultValue="own" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="own">自分 ({ownChannel.thumbnails.length})</TabsTrigger>
+                      <TabsTrigger value="competitor">競合 ({competitorChannel.thumbnails.length})</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="own" className="mt-4">
+                      {ownChannel.thumbnails.length === 0 ? (
+                        <p className="text-center text-muted-foreground py-8">
+                          自分のチャンネルURLを入力してサムネイルを取得してください
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                          {ownChannel.thumbnails.map(thumb => (
+                            <div
+                              key={thumb.id}
+                              onClick={() => toggleReferenceSelection(thumb)}
+                              className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                                workflow.selectedReferences.some(t => t.id === thumb.id)
+                                  ? 'border-primary ring-2 ring-primary/20'
+                                  : 'border-transparent hover:border-primary/50'
+                              }`}
+                            >
+                              <img src={thumb.thumbnail_url} alt={thumb.video_title} className="aspect-video object-cover" />
+                              <Badge className="absolute bottom-1 left-1 text-xs bg-blue-500/80">自分</Badge>
+                              {workflow.selectedReferences.some(t => t.id === thumb.id) && (
+                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-primary-foreground" />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </TabsContent>
+                    <TabsContent value="competitor" className="mt-4">
+                      {competitorChannel.thumbnails.length === 0 ? (
+                        <p className="text-center text-muted-foreground py-8">
+                          競合チャンネルURLを入力してサムネイルを取得してください
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                          {competitorChannel.thumbnails.map(thumb => (
+                            <div
+                              key={thumb.id}
+                              onClick={() => toggleReferenceSelection(thumb)}
+                              className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                                workflow.selectedReferences.some(t => t.id === thumb.id)
+                                  ? 'border-primary ring-2 ring-primary/20'
+                                  : 'border-transparent hover:border-primary/50'
+                              }`}
+                            >
+                              <img src={thumb.thumbnail_url} alt={thumb.video_title} className="aspect-video object-cover" />
+                              <Badge className="absolute bottom-1 left-1 text-xs bg-orange-500/80">競合</Badge>
+                              {workflow.selectedReferences.some(t => t.id === thumb.id) && (
+                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-primary-foreground" />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                )}
 
                 <div className="flex items-center justify-between pt-4">
                   <span className="text-sm text-muted-foreground">
@@ -935,17 +987,11 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                   Step 3: モデル画像を選択
                 </CardTitle>
                 <CardDescription>
-                  3つのパターンから使用するモデルを1つ選んでください
+                  パターンに基づいて3つのモデルを生成します。1つを選んでください
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {workflow.patternAnalysis && (
-                  <div className="p-3 bg-secondary/30 rounded-lg text-sm">
-                    <p><span className="font-medium">適用パターン:</span> {workflow.patternAnalysis.layout} / {workflow.patternAnalysis.colorScheme}</p>
-                  </div>
-                )}
-
-                {workflow.modelImages.length === 0 && (
+                {workflow.modelImages.length === 0 ? (
                   <Button 
                     onClick={generateModelImages} 
                     disabled={isGeneratingModels}
@@ -954,47 +1000,43 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                     {isGeneratingModels ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        モデル画像を生成中...
+                        モデル生成中...（約30秒）
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4 mr-2" />
-                        モデル画像を3枚生成
+                        モデル画像を生成
                       </>
                     )}
                   </Button>
-                )}
-
-                {workflow.modelImages.length > 0 && (
+                ) : (
                   <div className="space-y-4">
-                    <h4 className="font-semibold">モデル画像を選択（クリックで選択）</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       {workflow.modelImages.map((model, idx) => (
-                        <div 
-                          key={idx} 
+                        <div
+                          key={idx}
                           onClick={() => selectModel(idx)}
-                          className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                          className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
                             workflow.selectedModelIndex === idx
                               ? 'border-primary ring-2 ring-primary/20'
                               : 'border-transparent hover:border-primary/50'
                           }`}
                         >
                           <img src={model.imageUrl} alt={`Model ${idx + 1}`} className="aspect-video object-cover" />
-                          {workflow.selectedModelIndex === idx && (
-                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                              <Check className="w-4 h-4 text-primary-foreground" />
+                          <div className="p-3 bg-secondary/30">
+                            <div className="flex items-center justify-between mb-1">
+                              <Badge variant="outline">パターン {idx + 1}</Badge>
+                              {workflow.selectedModelIndex === idx && (
+                                <Check className="w-4 h-4 text-primary" />
+                              )}
                             </div>
-                          )}
-                          <div className="p-3 bg-background/95 space-y-2">
-                            <Badge className="text-xs">パターン{idx + 1}</Badge>
-                            <p className="text-sm">{model.description}</p>
+                            <p className="text-sm text-muted-foreground">{model.description}</p>
                           </div>
                         </div>
                       ))}
                     </div>
-
-                    <Button 
-                      onClick={generateModelImages} 
+                    <Button
+                      onClick={generateModelImages}
                       disabled={isGeneratingModels}
                       variant="outline"
                       className="w-full"
@@ -1237,7 +1279,6 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                     <p className="text-sm"><span className="font-medium">選択モデル:</span> {selectedModel.description.slice(0, 30)}...</p>
                   )}
                   <p className="text-sm"><span className="font-medium">アップロード素材:</span> {workflow.materials.length}枚</p>
-                  <p className="text-sm"><span className="font-medium">登録素材:</span> {channelAssets.length}枚</p>
                 </div>
 
                 <Button 

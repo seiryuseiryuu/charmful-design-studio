@@ -36,7 +36,6 @@ const navItems = [
   { title: 'ダッシュボード', url: '/', icon: LayoutDashboard },
   { title: 'サムネイル作成', url: '/create', icon: Wand2 },
   { title: 'ギャラリー', url: '/gallery', icon: ImageIcon },
-  { title: 'チャンネル設定', url: '/channels', icon: Youtube },
   { title: '設定', url: '/settings', icon: Settings },
 ];
 

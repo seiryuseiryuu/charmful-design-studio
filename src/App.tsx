@@ -9,7 +9,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Gallery from "./pages/Gallery";
-import Channels from "./pages/Channels";
 import ThumbnailWorkflow from "./pages/ThumbnailWorkflow";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -39,14 +38,6 @@ const App = () => (
                 element={
                   <AppLayout>
                     <Gallery />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/channels"
-                element={
-                  <AppLayout>
-                    <Channels />
                   </AppLayout>
                 }
               />
