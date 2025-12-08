@@ -638,7 +638,6 @@ JSON形式で回答:
       const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
       const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
       const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
-      const referenceTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean).slice(0, 5);
       const pattern = workflow.patternAnalysis;
 
       // 選択されたモデルのパターン情報を使用
@@ -647,23 +646,19 @@ ${selectedModel.description}` : '';
 
       const prompt = `YouTubeサムネイルを生成。
 
-【動画情報】
-タイトル: ${workflow.videoTitle}
-${workflow.videoDescription ? `内容: ${workflow.videoDescription}` : ''}
-
 【サムネイル文言】${workflow.text}
-
-【参考動画タイトル】
-${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
 ${patternInfo}
 
 ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : ''}
 
-【生成ルール】
+【重要ルール - 厳守】
 - アスペクト比: 16:9（1280x720）
 - 文言「${workflow.text}」を配置
-- 選択パターンの構図に従う`;
+- 選択パターンの構図・配置・デザインを完全に忠実に再現すること
+- モデル画像にない要素（人物・文字・オブジェクト）を追加しないこと
+- モデル画像の構図・レイアウトを変更しないこと
+- タイトル文字は含めない（サムネイル文言のみ配置）`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { 
@@ -1167,6 +1162,30 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
                         </Button>
                       </div>
                     </div>
+                    
+                    {/* モデル保存 */}
+                    {workflow.selectedModelIndex !== null && (
+                      <Button 
+                        onClick={async () => {
+                          const model = workflow.modelImages[workflow.selectedModelIndex!];
+                          try {
+                            await supabase.from('thumbnails').insert({
+                              user_id: user!.id,
+                              image_url: model.imageUrl,
+                              prompt: `モデル: ${model.patternName}`,
+                              title: model.patternName,
+                            });
+                            toast({ title: '保存完了', description: 'モデル画像を保存しました' });
+                          } catch {
+                            toast({ title: 'エラー', description: '保存に失敗しました', variant: 'destructive' });
+                          }
+                        }}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <Download className="w-4 h-4 mr-2" />選択中のモデルを保存
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -1370,7 +1389,12 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
                     </div>
 
                     <div className="flex gap-2">
-                      <Button onClick={generateThumbnail} disabled={isGenerating} variant="outline"><RefreshCw className="w-4 h-4 mr-2" />別パターン</Button>
+                      <Button 
+                        onClick={() => setWorkflow(prev => ({ ...prev, step: 4, generatedImages: [] }))} 
+                        variant="outline"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />別パターンで再生成
+                      </Button>
                       <Button onClick={resetWorkflow} variant="outline">新規作成</Button>
                     </div>
                   </div>
