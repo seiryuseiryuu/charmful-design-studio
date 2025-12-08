@@ -1048,38 +1048,62 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                         <div className="flex items-center gap-2">
                           <Badge className="bg-blue-500/80">テロップ配置</Badge>
                         </div>
-                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.textPosition}</p>
+                        <p className="text-muted-foreground pl-2">
+                          {typeof workflow.patternAnalysis.textPosition === 'string' 
+                            ? workflow.patternAnalysis.textPosition 
+                            : JSON.stringify(workflow.patternAnalysis.textPosition)}
+                        </p>
                       </div>
                       <div className="p-3 bg-background/50 rounded-lg space-y-1">
                         <div className="flex items-center gap-2">
                           <Badge className="bg-purple-500/80">配色</Badge>
                         </div>
-                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.colorScheme}</p>
+                        <p className="text-muted-foreground pl-2">
+                          {typeof workflow.patternAnalysis.colorScheme === 'string' 
+                            ? workflow.patternAnalysis.colorScheme 
+                            : JSON.stringify(workflow.patternAnalysis.colorScheme)}
+                        </p>
                       </div>
                       <div className="p-3 bg-background/50 rounded-lg space-y-1">
                         <div className="flex items-center gap-2">
                           <Badge className="bg-green-500/80">人物配置</Badge>
                         </div>
-                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.personPosition}</p>
+                        <p className="text-muted-foreground pl-2">
+                          {typeof workflow.patternAnalysis.personPosition === 'string' 
+                            ? workflow.patternAnalysis.personPosition 
+                            : JSON.stringify(workflow.patternAnalysis.personPosition)}
+                        </p>
                       </div>
                       <div className="p-3 bg-background/50 rounded-lg space-y-1">
                         <div className="flex items-center gap-2">
                           <Badge className="bg-orange-500/80">レイアウト</Badge>
                         </div>
-                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.layout}</p>
+                        <p className="text-muted-foreground pl-2">
+                          {typeof workflow.patternAnalysis.layout === 'string' 
+                            ? workflow.patternAnalysis.layout 
+                            : JSON.stringify(workflow.patternAnalysis.layout)}
+                        </p>
                       </div>
                       <div className="p-3 bg-background/50 rounded-lg space-y-1">
                         <div className="flex items-center gap-2">
                           <Badge className="bg-pink-500/80">視覚効果</Badge>
                         </div>
-                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.effects}</p>
+                        <p className="text-muted-foreground pl-2">
+                          {typeof workflow.patternAnalysis.effects === 'string' 
+                            ? workflow.patternAnalysis.effects 
+                            : JSON.stringify(workflow.patternAnalysis.effects)}
+                        </p>
                       </div>
                       {workflow.patternAnalysis.commonElements && (
                         <div className="p-3 bg-background/50 rounded-lg space-y-1">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-cyan-500/80">共通要素</Badge>
                           </div>
-                          <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.commonElements}</p>
+                          <p className="text-muted-foreground pl-2">
+                            {typeof workflow.patternAnalysis.commonElements === 'string' 
+                              ? workflow.patternAnalysis.commonElements 
+                              : JSON.stringify(workflow.patternAnalysis.commonElements)}
+                          </p>
                         </div>
                       )}
                       {workflow.patternAnalysis.uniqueStyle && (
@@ -1087,7 +1111,11 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                           <div className="flex items-center gap-2">
                             <Badge className="bg-yellow-500/80">チャンネル特有スタイル</Badge>
                           </div>
-                          <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.uniqueStyle}</p>
+                          <p className="text-muted-foreground pl-2">
+                            {typeof workflow.patternAnalysis.uniqueStyle === 'string' 
+                              ? workflow.patternAnalysis.uniqueStyle 
+                              : JSON.stringify(workflow.patternAnalysis.uniqueStyle)}
+                          </p>
                         </div>
                       )}
                     </div>
