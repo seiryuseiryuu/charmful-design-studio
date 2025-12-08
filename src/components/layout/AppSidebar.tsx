@@ -30,11 +30,13 @@ import {
   LogOut,
   ChevronUp,
   Sparkles,
+  Wand2,
 } from 'lucide-react';
 
 const navItems = [
   { title: 'ダッシュボード', url: '/', icon: LayoutDashboard },
-  { title: 'チャット', url: '/chat', icon: MessageSquare },
+  { title: 'サムネイル作成', url: '/create', icon: Wand2 },
+  { title: 'AIチャット', url: '/chat', icon: MessageSquare },
   { title: 'ギャラリー', url: '/gallery', icon: ImageIcon },
   { title: 'チャンネル設定', url: '/channels', icon: Settings },
 ];

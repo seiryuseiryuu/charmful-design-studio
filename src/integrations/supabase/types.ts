@@ -50,27 +50,77 @@ export type Database = {
         }
         Relationships: []
       }
+      channel_thumbnails: {
+        Row: {
+          channel_id: string
+          created_at: string
+          id: string
+          published_at: string | null
+          thumbnail_url: string
+          user_id: string
+          video_id: string
+          video_title: string | null
+        }
+        Insert: {
+          channel_id: string
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          thumbnail_url: string
+          user_id: string
+          video_id: string
+          video_title?: string | null
+        }
+        Update: {
+          channel_id?: string
+          created_at?: string
+          id?: string
+          published_at?: string | null
+          thumbnail_url?: string
+          user_id?: string
+          video_id?: string
+          video_title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_thumbnails_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channel_settings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           created_at: string
           id: string
+          reference_thumbnails: Json | null
+          selected_text: string | null
           title: string
           updated_at: string
           user_id: string
+          workflow_step: number | null
         }
         Insert: {
           created_at?: string
           id?: string
+          reference_thumbnails?: Json | null
+          selected_text?: string | null
           title?: string
           updated_at?: string
           user_id: string
+          workflow_step?: number | null
         }
         Update: {
           created_at?: string
           id?: string
+          reference_thumbnails?: Json | null
+          selected_text?: string | null
           title?: string
           updated_at?: string
           user_id?: string
+          workflow_step?: number | null
         }
         Relationships: []
       }

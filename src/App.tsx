@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
 import Gallery from "./pages/Gallery";
 import Channels from "./pages/Channels";
+import ThumbnailWorkflow from "./pages/ThumbnailWorkflow";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,14 @@ const App = () => (
               element={
                 <AppLayout>
                   <Channels />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/create"
+              element={
+                <AppLayout>
+                  <ThumbnailWorkflow />
                 </AppLayout>
               }
             />

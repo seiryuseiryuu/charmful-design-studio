@@ -98,10 +98,9 @@ export default function Auth() {
       });
     } else {
       toast({
-        title: '登録成功',
-        description: 'アカウントが作成されました！',
+        title: '確認メールを送信しました',
+        description: 'メールに記載されたリンクをクリックして登録を完了してください',
       });
-      navigate('/');
     }
   };
 
