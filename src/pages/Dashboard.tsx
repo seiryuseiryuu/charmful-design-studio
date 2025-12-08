@@ -20,7 +20,6 @@ import {
 
 interface Stats {
   totalThumbnails: number;
-  totalConversations: number;
   totalChannels: number;
   totalAssets: number;
 }
@@ -41,7 +40,7 @@ interface ChannelAsset {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [stats, setStats] = useState<Stats>({ totalThumbnails: 0, totalConversations: 0, totalChannels: 0, totalAssets: 0 });
+  const [stats, setStats] = useState<Stats>({ totalThumbnails: 0, totalChannels: 0, totalAssets: 0 });
   const [recentThumbnails, setRecentThumbnails] = useState<RecentThumbnail[]>([]);
   const [channelAssets, setChannelAssets] = useState<ChannelAsset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +49,8 @@ export default function Dashboard() {
     async function fetchData() {
       if (!user) return;
 
-      const [thumbnailsRes, conversationsRes, channelsRes, assetsRes, recentRes, assetsDataRes] = await Promise.all([
+      const [thumbnailsRes, channelsRes, assetsRes, recentRes, assetsDataRes] = await Promise.all([
         supabase.from('thumbnails').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.from('channel_settings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.from('channel_assets').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         supabase.from('thumbnails').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(4),
@@ -61,7 +59,6 @@ export default function Dashboard() {
 
       setStats({
         totalThumbnails: thumbnailsRes.count || 0,
-        totalConversations: conversationsRes.count || 0,
         totalChannels: channelsRes.count || 0,
         totalAssets: assetsRes.count || 0,
       });
@@ -76,7 +73,6 @@ export default function Dashboard() {
 
   const statCards = [
     { title: 'サムネイル', value: stats.totalThumbnails, icon: ImageIcon, color: 'from-violet-500 to-purple-600' },
-    { title: '会話', value: stats.totalConversations, icon: MessageSquare, color: 'from-blue-500 to-cyan-600' },
     { title: 'チャンネル', value: stats.totalChannels, icon: Settings, color: 'from-emerald-500 to-teal-600' },
     { title: '登録素材', value: stats.totalAssets, icon: Users, color: 'from-orange-500 to-rose-600' },
   ];
