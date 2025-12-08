@@ -138,7 +138,7 @@ export default function Gallery() {
               className="pl-9 bg-secondary/50"
             />
           </div>
-          <Link to="/chat">
+          <Link to="/create">
             <Button className="gradient-primary glow-sm shrink-0">
               <Plus className="w-4 h-4 mr-2" />
               新規作成
@@ -161,7 +161,7 @@ export default function Gallery() {
               {searchQuery ? '別のキーワードで検索してみてください' : 'AIチャットでサムネイルを作成しましょう'}
             </p>
             {!searchQuery && (
-              <Link to="/chat">
+              <Link to="/create">
                 <Button className="gradient-primary glow-sm">
                   <Plus className="w-4 h-4 mr-2" />
                   サムネイルを作成
