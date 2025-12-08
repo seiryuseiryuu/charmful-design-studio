@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, displayName?: string) => {
     const redirectUrl = `${window.location.origin}/`;
     
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -49,6 +49,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       },
     });
+
+    // サインアップ成功時にカスタム確認メールを送信
+    if (!error && data.user) {
+      try {
+        // Supabaseの確認URLを生成
+        const { data: sessionData } = await supabase.auth.getSession();
+        const confirmationUrl = `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/verify?token=${data.user.confirmation_sent_at ? '' : ''}&type=signup&redirect_to=${encodeURIComponent(redirectUrl)}`;
+        
+        // カスタムメール送信（Supabaseのデフォルトメールも送信される）
+        await supabase.functions.invoke('send-confirmation-email', {
+          body: {
+            email,
+            displayName,
+            confirmationUrl: redirectUrl, // リダイレクト先
+          },
+        });
+      } catch (emailError) {
+        console.error('Failed to send custom confirmation email:', emailError);
+        // メール送信エラーは無視（Supabaseのデフォルトメールが送信される）
+      }
+    }
 
     return { error: error as Error | null };
   };
