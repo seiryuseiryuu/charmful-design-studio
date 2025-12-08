@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, referenceImages, assetCount = 0, ownChannelCount = 0 } = await req.json();
+    const { prompt, referenceImages, assetCount = 0, ownChannelCount = 0, competitorCount = 0 } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     if (!LOVABLE_API_KEY) {
@@ -28,7 +28,7 @@ serve(async (req) => {
     // Add reference images first if provided
     // Order: registered assets first, then own channel thumbnails, then competitor thumbnails
     if (referenceImages && Array.isArray(referenceImages) && referenceImages.length > 0) {
-      console.log(`Including ${referenceImages.length} reference images (assets: ${assetCount}, own channel: ${ownChannelCount})`);
+      console.log(`Including ${referenceImages.length} reference images (assets: ${assetCount}, own channel: ${ownChannelCount}, competitor: ${competitorCount})`);
       
       for (const imageUrl of referenceImages) {
         if (imageUrl && typeof imageUrl === 'string') {
@@ -55,24 +55,35 @@ CRITICAL - Registered Channel Assets (HIGHEST PRIORITY):
 `
       : '';
 
-    const ownChannelNote = ownChannelCount > 0 && assetCount === 0
+    const ownChannelNote = ownChannelCount > 0
       ? `
-Person Consistency (from own channel thumbnails):
-- Reference images from the creator's own channel are provided
-- Use the SAME PERSON who appears in these own-channel references
-- Match their face and appearance consistently
+Own Channel Thumbnails (${ownChannelCount} images after assets):
+- These are from the creator's OWN channel
+- Use the SAME PERSON who appears in these thumbnails
+- Match their face, appearance, and style consistently
+- These images define the channel's visual identity
+`
+      : '';
+
+    const competitorNote = competitorCount > 0
+      ? `
+Competitor Channel Thumbnails (${competitorCount} images at the end):
+- These are from COMPETITOR channels - for STYLE REFERENCE ONLY
+- DO NOT copy or use any people/faces from these images
+- ONLY reference: layout, composition, color schemes, visual effects, typography style
+- The people in competitor thumbnails are NOT the creator - never use their likeness
 `
       : '';
 
     const enhancedPrompt = referenceImages && referenceImages.length > 0
       ? `You are a professional YouTube thumbnail designer. Study the reference images provided carefully.
-${assetNote}${ownChannelNote}
+${assetNote}${ownChannelNote}${competitorNote}
 Based on these references, create a NEW YouTube thumbnail with these specifications:
 - Aspect ratio: 16:9 (1280x720)
 - Main content/theme: ${prompt}
 - Style: Match the visual style, energy, and color palette of the reference thumbnails
 - Make it eye-catching, high contrast, and professional
-- The people in the registered assets MUST appear in the thumbnail with EXACT likeness
+- The people in the registered assets or own channel thumbnails MUST appear in the thumbnail with EXACT likeness
 
 CRITICAL TEXT RULES:
 - Do NOT include long text or full video titles on the thumbnail
@@ -81,8 +92,9 @@ CRITICAL TEXT RULES:
 - Let the visual imagery convey the message, not text
 
 IMPORTANT: 
-- The person(s) from registered assets must be the MAIN focus
+- The person(s) from registered assets or own channel must be the MAIN focus
 - Their face must be clearly visible and recognizable
+- DO NOT use faces from competitor thumbnails - only use their style/composition
 - Create an original composition inspired by the style references`
       : `Create a professional YouTube thumbnail image in 16:9 aspect ratio (1280x720). 
 Theme: ${prompt}. 
