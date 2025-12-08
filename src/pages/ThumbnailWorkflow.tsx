@@ -164,18 +164,38 @@ export default function ThumbnailWorkflow() {
 
   // Step 4に移動したとき、モデル画像がなければ自動生成
   useEffect(() => {
-    if (workflow.step === 4 && prevStepRef.current !== 4 && workflow.patternAnalysis && workflow.modelImages.length === 0 && !isGeneratingModels) {
+    const currentStep = workflow.step;
+    const hasPatternAnalysis = !!workflow.patternAnalysis;
+    const noModels = workflow.modelImages.length === 0;
+    
+    if (currentStep === 4 && prevStepRef.current !== 4 && hasPatternAnalysis && noModels && !isGeneratingModels) {
       generateModelImagesRef.current?.();
     }
-    prevStepRef.current = workflow.step;
+    prevStepRef.current = currentStep;
   }, [workflow.step, workflow.patternAnalysis, workflow.modelImages.length, isGeneratingModels]);
 
   // Step 6に移動したとき、まだ画像が生成されていなければ自動生成
   useEffect(() => {
-    if (workflow.step === 6 && prevStepRef.current !== 6 && workflow.generatedImages.length === 0 && workflow.text && !isGenerating) {
+    const currentStep = workflow.step;
+    const noImages = workflow.generatedImages.length === 0;
+    const hasText = workflow.text.trim().length > 0;
+    
+    if (currentStep === 6 && prevStepRef.current !== 6 && noImages && hasText && !isGenerating) {
       generateThumbnailRef.current?.();
     }
+    // prevStepRefは上のuseEffectで更新されるので、ここでは更新しない
   }, [workflow.step, workflow.generatedImages.length, workflow.text, isGenerating]);
+
+  // メモリリーク防止: マテリアルのプレビューURLをクリーンアップ
+  useEffect(() => {
+    return () => {
+      workflow.materials.forEach(m => {
+        if (m.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(m.preview);
+        }
+      });
+    };
+  }, []);
 
   const generateModelImagesRef = useRef<() => Promise<void>>();
   const generateThumbnailRef = useRef<() => Promise<void>>();
@@ -648,7 +668,14 @@ JSON形式で回答:
   };
 
   const removeMaterial = (id: string) => {
-    setWorkflow(prev => ({ ...prev, materials: prev.materials.filter(m => m.id !== id) }));
+    setWorkflow(prev => {
+      const materialToRemove = prev.materials.find(m => m.id === id);
+      // URLオブジェクトを解放してメモリリークを防止
+      if (materialToRemove?.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(materialToRemove.preview);
+      }
+      return { ...prev, materials: prev.materials.filter(m => m.id !== id) };
+    });
   };
 
   const generateThumbnail = async () => {
@@ -662,53 +689,63 @@ JSON形式で回答:
       // 素材がアップロードされているか確認
       const hasMaterials = workflow.materials.length > 0;
       const hasText = workflow.text.trim().length > 0;
+      
+      // モデル画像があり、素材がない場合は人物保持モードを有効化
+      // これにより Edge function で編集モードとして処理される
+      const shouldPreservePerson = selectedModel && !hasMaterials;
 
       // 選択されたモデルのパターン情報を使用
       const patternInfo = selectedModel ? `【選択パターン: ${selectedModel.patternName}】
 ${selectedModel.description}` : '';
 
-      // 素材指定がない場合はモデル画像の人物をそのまま使用
-      const preserveModelElements = !hasMaterials ? `
-【人物・要素の保持 - 最重要】
-- モデル画像に含まれる人物・キャラクターはそのまま維持すること
-- 人物の顔、表情、ポーズ、服装を変更しないこと
-- 新しい人物を追加しないこと
-- 人物を削除しないこと` : '';
+      const textInstruction = hasText 
+        ? `文言「${workflow.text}」を追加配置してください。` 
+        : '文字は追加しないでください。';
 
-      const textInstruction = hasText ? `- 文言「${workflow.text}」を配置` : '- 文言は指定されていないため、文字を追加しないこと';
+      // シンプルで明確なプロンプト
+      const prompt = shouldPreservePerson
+        ? `このサムネイル画像を編集してください。
 
-      const prompt = `YouTubeサムネイルを生成。
+${textInstruction}
+
+【絶対に守るルール】
+- 画像に写っている人物は絶対に変更しない
+- 人物の顔、髪型、服装、ポーズをそのまま維持
+- 背景やエフェクトの微調整のみ許可
+- 新しい人物を追加しない`
+        : `YouTubeサムネイルを生成。
 
 ${hasText ? `【サムネイル文言】${workflow.text}` : '【文言なし】'}
 
 ${patternInfo}
-${preserveModelElements}
 
 ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : ''}
 
-【重要ルール - 厳守】
+【重要ルール】
 - アスペクト比: 16:9（1280x720）
-${textInstruction}
-- 選択パターンの構図・配置・デザインを完全に忠実に再現すること
-- モデル画像にない要素（人物・文字・オブジェクト）を追加しないこと
-- モデル画像の構図・レイアウトを変更しないこと
-- タイトル文字は含めない（サムネイル文言のみ配置）
-- 指定がない限り、モデル画像の人物・背景・構図をそのまま引き継ぐこと`;
+- 選択パターンの構図・配置・デザインを忠実に再現`;
 
-      // モデル画像を参照画像として追加（最優先）
+      // 参照画像の構築
       const referenceImages = selectedModel 
         ? [selectedModel.imageUrl, ...ownChannelRefs.map(t => t.thumbnail_url), ...competitorRefs.map(t => t.thumbnail_url)]
         : [...ownChannelRefs, ...competitorRefs].map(t => t.thumbnail_url);
+
+      console.log('Generating thumbnail:', {
+        hasModel: !!selectedModel,
+        hasMaterials,
+        shouldPreservePerson,
+        referenceCount: referenceImages.length
+      });
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { 
           prompt,
           referenceImages,
-          modelImage: selectedModel?.imageUrl, // モデル画像を明示的に渡す
-          assetCount: workflow.materials.length,
+          modelImage: selectedModel?.imageUrl,
+          assetCount: hasMaterials ? workflow.materials.length : 0,
           ownChannelCount: ownChannelRefs.length,
           competitorCount: competitorRefs.length,
-          preserveModelPerson: !hasMaterials, // 素材がない場合は人物保持フラグ
+          preserveModelPerson: shouldPreservePerson,
         },
       });
 
