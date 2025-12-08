@@ -685,15 +685,41 @@ Style: Bold, eye-catching, high contrast colors, professional design`;
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Textarea
-                    value={workflow.text}
-                    onChange={(e) => setWorkflow(prev => ({ ...prev, text: e.target.value }))}
-                    placeholder="例: 【衝撃】知らないと損する○○の真実"
-                    className="min-h-[100px] bg-secondary/50"
-                  />
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>文字数: {workflow.text.length}文字</span>
-                    <span>推奨: 15〜25文字</span>
+                  {/* AI Suggestion Quick Apply */}
+                  {aiGuidance?.suggestions && aiGuidance.suggestions.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <Lightbulb className="w-4 h-4 text-yellow-500" />
+                        AIの提案をクリックして使用:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {aiGuidance.suggestions.map((suggestion, idx) => (
+                          <Button
+                            key={idx}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setWorkflow(prev => ({ ...prev, text: suggestion.replace(/[「」『』]/g, '') }))}
+                            className="text-xs"
+                          >
+                            {suggestion}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">サムネイルに表示するテキスト</label>
+                    <Textarea
+                      value={workflow.text}
+                      onChange={(e) => setWorkflow(prev => ({ ...prev, text: e.target.value }))}
+                      placeholder="例: 【衝撃】知らないと損する○○の真実"
+                      className="min-h-[100px] bg-secondary/50"
+                    />
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>文字数: {workflow.text.length}文字</span>
+                      <span>推奨: 15〜25文字</span>
+                    </div>
                   </div>
                   
                   <div className="flex items-center justify-between pt-4 border-t border-border">
