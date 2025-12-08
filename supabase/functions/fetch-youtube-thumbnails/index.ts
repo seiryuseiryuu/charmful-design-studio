@@ -128,17 +128,19 @@ serve(async (req) => {
       const description = video.snippet?.description || '';
       const tags = video.snippet?.tags || [];
       
-      // Shorts detection:
-      // 1. Duration under 60 seconds
-      // 2. Title contains #Shorts or #shorts
-      // 3. Tags contain "shorts"
-      // 4. Description contains #Shorts
+      // Shorts detection (より厳格な判定):
+      // 1. Duration under 60 seconds = 確実にShort
+      // 2. Duration under 180 seconds AND 縦型動画の可能性
+      // 3. Title/description/tags に #Shorts が含まれる
       const hasShortHashtag = 
         /#shorts/i.test(title) || 
         /#shorts/i.test(description) ||
-        tags.some((tag: string) => /^shorts$/i.test(tag));
+        tags.some((tag: string) => /^shorts$/i.test(tag)) ||
+        title.includes('｜#') ||  // 典型的なShortsのタイトル形式
+        /^.{10,50}｜#/.test(title); // 短いタイトル + ハッシュタグ形式
       
-      const isShort = durationSeconds < 60 || durationSeconds <= 180 && hasShortHashtag;
+      // 厳格な判定: 60秒未満は確実にShort、3分未満でハッシュタグあればShort
+      const isShort = durationSeconds < 61 || (durationSeconds <= 180 && hasShortHashtag);
       
       videoInfo[video.id] = { duration: durationSeconds, isShort };
     }

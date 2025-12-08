@@ -71,6 +71,8 @@ interface PatternCategory {
 interface PatternAnalysisResult {
   patterns: PatternCategory[];
   summary: string;
+  uniqueFindings?: string[];
+  individualAnalysis?: any[];
 }
 
 interface MaterialSuggestion {
@@ -1272,9 +1274,9 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Eye className="w-5 h-5 text-primary" />
-                  Step 3: パターン分析
+                  Step 3: 高度パターン分析
                 </CardTitle>
-                <CardDescription>選択した{workflow.selectedReferences.length}枚からパターンを抽出</CardDescription>
+                <CardDescription>2段階AI分析で{workflow.selectedReferences.length}枚から精緻なパターンを抽出</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-5 gap-2">
@@ -1283,32 +1285,114 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
                   ))}
                 </div>
 
+                {/* 分析プロセス説明 */}
+                <div className="p-4 bg-secondary/30 rounded-lg border border-border/50">
+                  <h5 className="font-medium mb-3 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    高度分析プロセス
+                  </h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className={`p-3 rounded-lg border ${isAnalyzing ? 'border-primary bg-primary/10 animate-pulse' : workflow.patternAnalysis ? 'border-green-500 bg-green-500/10' : 'border-border bg-background/50'}`}>
+                      <div className="font-medium flex items-center gap-2">
+                        {workflow.patternAnalysis ? <Check className="w-4 h-4 text-green-500" /> : isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <span className="w-4 h-4 rounded-full border-2 border-muted-foreground" />}
+                        第1段階: 個別画像分析
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">各画像のテロップ・配色・構図・人物・視覚効果を精緻に抽出</p>
+                    </div>
+                    <div className={`p-3 rounded-lg border ${isAnalyzing && !workflow.patternAnalysis ? 'border-muted bg-background/50' : workflow.patternAnalysis ? 'border-green-500 bg-green-500/10' : 'border-border bg-background/50'}`}>
+                      <div className="font-medium flex items-center gap-2">
+                        {workflow.patternAnalysis ? <Check className="w-4 h-4 text-green-500" /> : <span className="w-4 h-4 rounded-full border-2 border-muted-foreground" />}
+                        第2段階: パターン抽出
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">複数画像の共通点を検出し、再現可能なパターンに分類</p>
+                    </div>
+                  </div>
+                </div>
+
                 <Button onClick={analyzePatterns} disabled={isAnalyzing} className="w-full gradient-primary">
-                  {isAnalyzing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />分析中...</> : <><Eye className="w-4 h-4 mr-2" />パターンを分析</>}
+                  {isAnalyzing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />高度分析実行中...</> : <><Eye className="w-4 h-4 mr-2" />高度パターン分析を開始</>}
                 </Button>
 
                 {workflow.patternAnalysis && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
-                    <h4 className="font-semibold flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-primary" />
-                      分析結果: {workflow.patternAnalysis.patterns?.length || 0}パターン検出
-                    </h4>
+                  <div className="space-y-4">
+                    {/* サマリー */}
+                    <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                      <h4 className="font-semibold flex items-center gap-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        分析完了: {workflow.patternAnalysis.patterns?.length || 0}パターン検出
+                      </h4>
+                      {workflow.patternAnalysis.summary && (
+                        <p className="text-sm text-muted-foreground">{workflow.patternAnalysis.summary}</p>
+                      )}
+                      {workflow.patternAnalysis.uniqueFindings && (
+                        <div className="mt-3 space-y-1">
+                          <p className="text-xs font-medium text-primary">独自の発見:</p>
+                          {workflow.patternAnalysis.uniqueFindings.map((finding: string, i: number) => (
+                            <p key={i} className="text-xs text-muted-foreground">• {finding}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     
-                    {workflow.patternAnalysis.summary && (
-                      <p className="text-sm text-muted-foreground">{workflow.patternAnalysis.summary}</p>
-                    )}
-                    
+                    {/* 各パターン詳細 */}
                     <div className="space-y-3">
-                      {workflow.patternAnalysis.patterns?.map((pattern, idx) => (
-                        <div key={idx} className="p-3 bg-background/50 rounded-lg border border-border/50">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="outline">{pattern.name}</Badge>
+                      {workflow.patternAnalysis.patterns?.map((pattern: any, idx: number) => (
+                        <div key={idx} className="p-4 bg-background/50 rounded-lg border border-border/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="bg-primary/10">{pattern.name}</Badge>
+                              {pattern.matchCount && (
+                                <span className="text-xs text-muted-foreground">{pattern.matchCount}枚で検出</span>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">{pattern.description}</p>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div><span className="text-muted-foreground">配置:</span> {pattern.characteristics.layout}</div>
-                            <div><span className="text-muted-foreground">配色:</span> {pattern.characteristics.colorScheme}</div>
+                          <p className="text-sm text-muted-foreground mb-3">{pattern.description}</p>
+                          
+                          {/* 特徴詳細 */}
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs mb-3">
+                            <div className="p-2 bg-secondary/30 rounded">
+                              <span className="text-muted-foreground block">テロップ</span>
+                              <span>{pattern.characteristics.textPosition || pattern.characteristics.textStyle || '-'}</span>
+                            </div>
+                            <div className="p-2 bg-secondary/30 rounded">
+                              <span className="text-muted-foreground block">配色</span>
+                              <span>{pattern.characteristics.colorScheme}</span>
+                            </div>
+                            <div className="p-2 bg-secondary/30 rounded">
+                              <span className="text-muted-foreground block">構図</span>
+                              <span>{pattern.characteristics.layout}</span>
+                            </div>
+                            {pattern.characteristics.colorMood && (
+                              <div className="p-2 bg-secondary/30 rounded">
+                                <span className="text-muted-foreground block">配色意図</span>
+                                <span>{pattern.characteristics.colorMood}</span>
+                              </div>
+                            )}
+                            {pattern.characteristics.visualTechniques && (
+                              <div className="p-2 bg-secondary/30 rounded">
+                                <span className="text-muted-foreground block">視覚技法</span>
+                                <span>{pattern.characteristics.visualTechniques}</span>
+                              </div>
+                            )}
+                            {pattern.characteristics.keyElement && (
+                              <div className="p-2 bg-secondary/30 rounded">
+                                <span className="text-muted-foreground block">核心要素</span>
+                                <span>{pattern.characteristics.keyElement}</span>
+                              </div>
+                            )}
                           </div>
+
+                          {/* 再現ルール */}
+                          {pattern.designRules && pattern.designRules.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-border/50">
+                              <p className="text-xs font-medium text-primary mb-1">再現ルール:</p>
+                              <ul className="text-xs text-muted-foreground space-y-0.5">
+                                {pattern.designRules.slice(0, 3).map((rule: string, i: number) => (
+                                  <li key={i}>• {rule}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
