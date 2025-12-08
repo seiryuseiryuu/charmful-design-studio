@@ -36,13 +36,13 @@ serve(async (req) => {
     // Build message content with optional reference images
     const messageContent: any[] = [];
 
-    // モデル画像があり、人物保持モードの場合は編集モードとして扱う
-    const useEditMode = editMode || (modelImage && preserveModelPerson);
+    // 人物保持モードまたは編集モードの場合、ベース画像を最初に追加
+    // これにより画像編集として処理され、人物が保持される
+    const shouldUseEditMode = editMode || preserveModelPerson;
     const baseImage = originalImage || modelImage;
 
-    // For edit mode or model preservation mode, add the base image first
-    if (useEditMode && baseImage) {
-      console.log('Edit/Preservation mode: Including base image for modification');
+    if (shouldUseEditMode && baseImage) {
+      console.log('Using edit mode for person preservation. Base image provided.');
       messageContent.push({
         type: 'image_url',
         image_url: {
@@ -51,13 +51,12 @@ serve(async (req) => {
       });
     }
 
-    // Add reference images if provided
-    // Order: registered assets first, then own channel thumbnails, then competitor thumbnails
+    // Add reference images if provided (skip duplicates with base image)
     if (referenceImages && Array.isArray(referenceImages) && referenceImages.length > 0) {
       console.log(`Including ${referenceImages.length} reference images (assets: ${assetCount}, own channel: ${ownChannelCount}, competitor: ${competitorCount})`);
       
       for (const imageUrl of referenceImages) {
-        // モデル画像と重複する場合はスキップ（既に追加済み）
+        // ベース画像と重複する場合はスキップ
         if (imageUrl && typeof imageUrl === 'string' && imageUrl !== baseImage) {
           messageContent.push({
             type: 'image_url',
@@ -69,71 +68,40 @@ serve(async (req) => {
       }
     }
 
-    // Create detailed prompt for YouTube thumbnail generation with registered assets and person consistency
-    const assetNote = assetCount > 0
-      ? `
-CRITICAL - Registered Channel Assets (HIGHEST PRIORITY):
-- The first ${assetCount} reference image(s) are registered channel assets
-- These include the channel's main person(s), characters, and icons
-- You MUST use these people/characters EXACTLY as they appear
-- Match their: face shape, facial features, hair style, skin tone, clothing style, and overall appearance PERFECTLY
-- These are the channel's identity - they must be recognizable across all thumbnails
-- If there's a "自分" (self) image, that person MUST be the main character in the thumbnail
-`
-      : '';
+    // プロンプト構築
+    let enhancedPrompt: string;
 
-    const ownChannelNote = ownChannelCount > 0
-      ? `
-Own Channel Thumbnails (${ownChannelCount} images after assets):
-- These are from the creator's OWN channel
-- Use the SAME PERSON who appears in these thumbnails
-- Match their face, appearance, and style consistently
-- These images define the channel's visual identity
-`
-      : '';
+    if (preserveModelPerson && baseImage) {
+      // 人物保持モード: 最も厳格な指示
+      enhancedPrompt = `【画像編集タスク - 人物保持必須】
 
-    const competitorNote = competitorCount > 0
-      ? `
-Competitor Channel Thumbnails (${competitorCount} images at the end):
-- These are from COMPETITOR channels - for STYLE REFERENCE ONLY
-- DO NOT copy or use any people/faces from these images
-- ONLY reference: layout, composition, color schemes, visual effects, typography style
-- The people in competitor thumbnails are NOT the creator - never use their likeness
-`
-      : '';
+あなたは既存の画像を編集しています。最初に提供された画像がベース画像です。
 
-    // モデル画像の人物保持モード用プロンプト
-    const modelPreservationPrompt = modelImage && preserveModelPerson
-      ? `You are editing an existing YouTube thumbnail image. The FIRST image provided is the MODEL/BASE thumbnail.
+【絶対厳守ルール - 人物の完全保持】
+1. ベース画像に含まれる人物の「顔」「体型」「髪型」「肌の色」「服装」を100%そのまま維持すること
+2. 人物の表情、ポーズ、向き、位置を一切変更しないこと
+3. 新しい人物を絶対に追加しないこと
+4. 人物を絶対に削除しないこと
+5. 人物の見た目を少しでも変更することは禁止
 
-【最重要 - 人物の完全保持】
-この画像に含まれる人物・キャラクターを「絶対に」そのまま維持してください：
-1. 顔の形状、顔の特徴、肌の色、髪型を「完全に同一」に保つこと
-2. 表情、ポーズ、体の向きを変更しないこと
-3. 服装、アクセサリーをそのまま維持すること
-4. 人物の位置・配置を変更しないこと
-5. 新しい人物を追加しないこと
-6. 人物を削除しないこと
-7. 人物の見た目を「一切変更しない」こと
-
-【編集ルール】
-- 背景やエフェクトは必要に応じて調整可能
-- 文字・テキストの追加・変更は許可
-- 色調補正は許可（ただし人物の肌色等は維持）
-- 構図・レイアウトは元画像を維持
+【許可される編集】
+- 背景の調整
+- テキスト・文字の追加/変更
+- 色調・明るさの調整（人物の肌色は維持）
+- エフェクトの追加
 
 【出力仕様】
 - アスペクト比: 16:9 (1280x720)
-- 元画像の人物が「そのまま」認識できること
+- 元画像の人物が「完全に同一人物」として認識できること
 
-User's request: ${prompt}
+【ユーザーの指示】
+${prompt}
 
-CRITICAL: The person in the output MUST be 100% identical to the person in the input image. Do NOT generate a new person or alter their appearance in any way.`
-      : null;
+CRITICAL: 出力画像の人物は、入力画像の人物と100%同一でなければなりません。別人に見えたら失敗です。`;
 
-    // Edit mode prompt - preserve unchanged parts
-    const editModePrompt = editMode && originalImage
-      ? `You are editing an existing YouTube thumbnail image. The FIRST image provided is the ORIGINAL thumbnail that needs modification.
+    } else if (editMode && originalImage) {
+      // 通常の編集モード
+      enhancedPrompt = `You are editing an existing YouTube thumbnail image. The FIRST image provided is the ORIGINAL thumbnail that needs modification.
 
 CRITICAL EDITING RULES:
 1. ONLY modify the specific elements mentioned in the user's request
@@ -148,24 +116,44 @@ CRITICAL EDITING RULES:
 
 User's modification request: ${prompt}
 
-Remember: ONLY change what the user specifically asked to change. Everything else must remain IDENTICAL to the original image.`
-      : null;
+Remember: ONLY change what the user specifically asked to change. Everything else must remain IDENTICAL to the original image.`;
 
-    // プロンプトの優先順位: モデル保持 > 編集モード > 通常生成
-    const enhancedPrompt = modelPreservationPrompt 
-      ? modelPreservationPrompt
-      : editModePrompt 
-      ? editModePrompt
-      : referenceImages && referenceImages.length > 0
-      ? `You are a professional YouTube thumbnail designer. Study the reference images provided carefully.
+    } else if (referenceImages && referenceImages.length > 0) {
+      // 参照画像ありの新規生成
+      const assetNote = assetCount > 0
+        ? `
+CRITICAL - Registered Channel Assets (HIGHEST PRIORITY):
+- The first ${assetCount} reference image(s) are registered channel assets
+- These include the channel's main person(s), characters, and icons
+- You MUST use these people/characters EXACTLY as they appear
+- Match their: face shape, facial features, hair style, skin tone, clothing style, and overall appearance PERFECTLY
+`
+        : '';
+
+      const ownChannelNote = ownChannelCount > 0
+        ? `
+Own Channel Thumbnails (${ownChannelCount} images after assets):
+- These are from the creator's OWN channel
+- Use the SAME PERSON who appears in these thumbnails
+- Match their face, appearance, and style consistently
+`
+        : '';
+
+      const competitorNote = competitorCount > 0
+        ? `
+Competitor Channel Thumbnails (${competitorCount} images at the end):
+- These are from COMPETITOR channels - for STYLE REFERENCE ONLY
+- DO NOT copy or use any people/faces from these images
+- ONLY reference: layout, composition, color schemes, visual effects, typography style
+`
+        : '';
+
+      enhancedPrompt = `You are a professional YouTube thumbnail designer. Study the reference images provided carefully.
 ${assetNote}${ownChannelNote}${competitorNote}
 CRITICAL - COMPOSITION AND LAYOUT ADHERENCE:
 - You MUST follow the EXACT same composition and layout as the reference thumbnails
 - Copy the EXACT positioning: where text is placed, where people are positioned, background arrangement
 - Match the visual hierarchy and element placement PRECISELY
-- If references show person on left with text on right, do the SAME
-- If references show centered face with text overlay, do the SAME
-- The composition must be IMMEDIATELY recognizable as being from the same channel
 
 Based on these references, create a NEW YouTube thumbnail with these specifications:
 - Aspect ratio: 16:9 (1280x720)
@@ -173,26 +161,26 @@ Based on these references, create a NEW YouTube thumbnail with these specificati
 - COPY the EXACT composition, layout, and element positioning from reference thumbnails
 - Style: Match the visual style, energy, and color palette of the reference thumbnails
 - Make it eye-catching, high contrast, and professional
-- The people in the registered assets or own channel thumbnails MUST appear in the thumbnail with EXACT likeness
 
 CRITICAL TEXT RULES:
 - Do NOT include long text or full video titles on the thumbnail
 - Text should be minimal: 1-3 impactful words MAXIMUM
-- Use short, punchy keywords or emotional phrases only (e.g., "衝撃", "最強", "ヤバい", "!?")
-- Place text in the EXACT same position as shown in reference thumbnails
-- Let the visual imagery convey the message, not text
+- Use short, punchy keywords or emotional phrases only
 
 IMPORTANT: 
 - The person(s) from registered assets or own channel must be the MAIN focus
 - Their face must be clearly visible and recognizable
 - Position people in the SAME location as in reference thumbnails
-- DO NOT use faces from competitor thumbnails - only use their style/composition
-- Create an original composition that STRICTLY follows the reference layout`
-      : `Create a professional YouTube thumbnail image in 16:9 aspect ratio (1280x720). 
+- DO NOT use faces from competitor thumbnails - only use their style/composition`;
+
+    } else {
+      // 参照なしの新規生成
+      enhancedPrompt = `Create a professional YouTube thumbnail image in 16:9 aspect ratio (1280x720). 
 Theme: ${prompt}. 
 Style: High contrast, vibrant colors, eye-catching design suitable for YouTube. 
 Make it visually striking and attention-grabbing. Wide landscape format.
 CRITICAL: Do NOT put long text or video titles on the thumbnail. Use minimal text only - 1-3 impactful words maximum.`;
+    }
 
     // Add the text prompt
     messageContent.push({
@@ -200,10 +188,12 @@ CRITICAL: Do NOT put long text or video titles on the thumbnail. Use minimal tex
       text: enhancedPrompt,
     });
 
-    console.log('Generating image with', referenceImages?.length || 0, 'total reference images');
-    console.log('Edit mode:', editMode, 'Has original:', !!originalImage);
-    console.log('Model preservation mode:', preserveModelPerson, 'Has model image:', !!modelImage);
-    console.log('Prompt preview:', enhancedPrompt.substring(0, 500) + '...');
+    console.log('=== Generate Image Request ===');
+    console.log('Edit mode:', editMode);
+    console.log('Preserve model person:', preserveModelPerson);
+    console.log('Has base image:', !!baseImage);
+    console.log('Reference count:', referenceImages?.length || 0);
+    console.log('Using edit approach:', shouldUseEditMode);
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
