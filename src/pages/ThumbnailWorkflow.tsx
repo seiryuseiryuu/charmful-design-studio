@@ -18,13 +18,14 @@ import {
   Wand2,
   Type,
   Camera,
-  LayoutGrid,
   Upload,
   Lightbulb,
   Eye,
   Pencil,
   Youtube,
   Search,
+  Plus,
+  X,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -100,14 +101,50 @@ export default function ThumbnailWorkflow() {
     thumbnails: [],
     isLoading: false,
   });
-  const [competitorChannel, setCompetitorChannel] = useState<ChannelInput>({
-    id: 'competitor',
-    url: '',
-    name: '',
-    type: 'competitor',
-    thumbnails: [],
-    isLoading: false,
-  });
+  
+  // 複数の競合チャンネル
+  const [competitorChannels, setCompetitorChannels] = useState<ChannelInput[]>([
+    {
+      id: 'competitor-0',
+      url: '',
+      name: '',
+      type: 'competitor',
+      thumbnails: [],
+      isLoading: false,
+    },
+  ]);
+
+  const addCompetitorChannel = () => {
+    const newId = `competitor-${competitorChannels.length}`;
+    setCompetitorChannels(prev => [
+      ...prev,
+      {
+        id: newId,
+        url: '',
+        name: '',
+        type: 'competitor',
+        thumbnails: [],
+        isLoading: false,
+      },
+    ]);
+  };
+
+  const removeCompetitorChannel = (id: string) => {
+    if (competitorChannels.length > 1) {
+      setCompetitorChannels(prev => prev.filter(c => c.id !== id));
+      // 削除したチャンネルのサムネイルを選択解除
+      setWorkflow(prev => ({
+        ...prev,
+        selectedReferences: prev.selectedReferences.filter(t => !t.id.startsWith(id)),
+      }));
+    }
+  };
+
+  const updateCompetitorChannel = (id: string, updates: Partial<ChannelInput>) => {
+    setCompetitorChannels(prev =>
+      prev.map(c => (c.id === id ? { ...c, ...updates } : c))
+    );
+  };
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -621,14 +658,14 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
       thumbnails: [],
       isLoading: false,
     });
-    setCompetitorChannel({
-      id: 'competitor',
+    setCompetitorChannels([{
+      id: 'competitor-0',
       url: '',
       name: '',
       type: 'competitor',
       thumbnails: [],
       isLoading: false,
-    });
+    }]);
     setWorkflow({
       step: 1,
       selectedReferences: [],
@@ -663,7 +700,8 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
     }
   };
 
-  const allThumbnails = [...ownChannel.thumbnails, ...competitorChannel.thumbnails];
+  const competitorThumbnails = competitorChannels.flatMap(c => c.thumbnails);
+  const allThumbnails = [...ownChannel.thumbnails, ...competitorThumbnails];
   const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
 
   const steps = [
@@ -773,40 +811,72 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                     )}
                   </div>
 
-                  {/* Competitor Channel */}
-                  <div className="p-4 border border-border rounded-lg space-y-3">
-                    <div className="flex items-center gap-2">
+                  {/* Competitor Channels */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
                       <Badge className="bg-orange-500/80">競合チャンネル</Badge>
-                      {competitorChannel.icon && (
-                        <img src={competitorChannel.icon} alt="" className="w-6 h-6 rounded-full" />
-                      )}
-                      {competitorChannel.name && (
-                        <span className="text-sm text-muted-foreground">{competitorChannel.name}</span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        value={competitorChannel.url}
-                        onChange={(e) => setCompetitorChannel(prev => ({ ...prev, url: e.target.value }))}
-                        placeholder="https://youtube.com/@..."
-                        className="flex-1 bg-secondary/50"
-                      />
                       <Button
-                        onClick={() => fetchChannelThumbnails(competitorChannel, setCompetitorChannel)}
-                        disabled={competitorChannel.isLoading || !competitorChannel.url.trim()}
-                        size="icon"
                         variant="outline"
+                        size="sm"
+                        onClick={addCompetitorChannel}
                       >
-                        {competitorChannel.isLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Search className="w-4 h-4" />
-                        )}
+                        <Plus className="w-4 h-4 mr-1" />
+                        追加
                       </Button>
                     </div>
-                    {competitorChannel.thumbnails.length > 0 && (
-                      <p className="text-xs text-muted-foreground">{competitorChannel.thumbnails.length}件取得済み</p>
-                    )}
+                    {competitorChannels.map((channel, index) => (
+                      <div key={channel.id} className="p-4 border border-border rounded-lg space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">競合 {index + 1}</span>
+                          {channel.icon && (
+                            <img src={channel.icon} alt="" className="w-6 h-6 rounded-full" />
+                          )}
+                          {channel.name && (
+                            <span className="text-sm text-muted-foreground">{channel.name}</span>
+                          )}
+                          {competitorChannels.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="ml-auto h-6 w-6"
+                              onClick={() => removeCompetitorChannel(channel.id)}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Input
+                            value={channel.url}
+                            onChange={(e) => updateCompetitorChannel(channel.id, { url: e.target.value })}
+                            placeholder="https://youtube.com/@..."
+                            className="flex-1 bg-secondary/50"
+                          />
+                          <Button
+                            onClick={() => {
+                              const setChannel = (updater: (prev: ChannelInput) => ChannelInput) => {
+                                setCompetitorChannels(prev =>
+                                  prev.map(c => (c.id === channel.id ? updater(c) : c))
+                                );
+                              };
+                              fetchChannelThumbnails(channel, setChannel);
+                            }}
+                            disabled={channel.isLoading || !channel.url.trim()}
+                            size="icon"
+                            variant="outline"
+                          >
+                            {channel.isLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Search className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                        {channel.thumbnails.length > 0 && (
+                          <p className="text-xs text-muted-foreground">{channel.thumbnails.length}件取得済み</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -815,7 +885,7 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                   <Tabs defaultValue="own" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="own">自分 ({ownChannel.thumbnails.length})</TabsTrigger>
-                      <TabsTrigger value="competitor">競合 ({competitorChannel.thumbnails.length})</TabsTrigger>
+                      <TabsTrigger value="competitor">競合 ({competitorThumbnails.length})</TabsTrigger>
                     </TabsList>
                     <TabsContent value="own" className="mt-4">
                       {ownChannel.thumbnails.length === 0 ? (
@@ -847,13 +917,13 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                       )}
                     </TabsContent>
                     <TabsContent value="competitor" className="mt-4">
-                      {competitorChannel.thumbnails.length === 0 ? (
+                      {competitorThumbnails.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">
                           競合チャンネルURLを入力してサムネイルを取得してください
                         </p>
                       ) : (
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                          {competitorChannel.thumbnails.map(thumb => (
+                          {competitorThumbnails.map(thumb => (
                             <div
                               key={thumb.id}
                               onClick={() => toggleReferenceSelection(thumb)}
@@ -864,7 +934,7 @@ ${workflow.patternAnalysis ? `- レイアウト: ${workflow.patternAnalysis.layo
                               }`}
                             >
                               <img src={thumb.thumbnail_url} alt={thumb.video_title} className="aspect-video object-cover" />
-                              <Badge className="absolute bottom-1 left-1 text-xs bg-orange-500/80">競合</Badge>
+                              <Badge className="absolute bottom-1 left-1 text-xs bg-orange-500/80">{thumb.channel_name?.slice(0, 6) || '競合'}</Badge>
                               {workflow.selectedReferences.some(t => t.id === thumb.id) && (
                                 <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
                                   <Check className="w-3 h-3 text-primary-foreground" />
