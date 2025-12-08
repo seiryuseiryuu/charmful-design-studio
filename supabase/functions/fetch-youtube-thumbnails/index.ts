@@ -90,9 +90,9 @@ serve(async (req) => {
 
     const uploadsPlaylistId = channelData.items[0].contentDetails.relatedPlaylists.uploads;
 
-    // Get latest videos from uploads playlist
+    // Get latest videos from uploads playlist (fetch more to filter out Shorts)
     const playlistResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=20&key=${YOUTUBE_API_KEY}`
+      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}`
     );
     const playlistData = await playlistResponse.json();
 
@@ -100,12 +100,43 @@ serve(async (req) => {
       throw new Error('No videos found');
     }
 
-    console.log(`Found ${playlistData.items.length} videos`);
+    // Get video IDs for duration check
+    const videoIds = playlistData.items.map((item: any) => item.snippet.resourceId.videoId).join(',');
+    
+    // Get video details including duration to filter out Shorts (< 60 seconds)
+    const videosResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`
+    );
+    const videosData = await videosResponse.json();
+    
+    // Create a map of video durations (parse ISO 8601 duration)
+    const videoDurations: Record<string, number> = {};
+    for (const video of videosData.items || []) {
+      const duration = video.contentDetails.duration;
+      // Parse ISO 8601 duration (e.g., PT1M30S, PT30S, PT1H2M3S)
+      const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (match) {
+        const hours = parseInt(match[1] || '0');
+        const minutes = parseInt(match[2] || '0');
+        const seconds = parseInt(match[3] || '0');
+        videoDurations[video.id] = hours * 3600 + minutes * 60 + seconds;
+      }
+    }
 
-    // Process and save thumbnails
+    console.log(`Found ${playlistData.items.length} videos, filtering out Shorts...`);
+
+    // Process and save thumbnails (exclude Shorts - videos under 60 seconds)
     const thumbnails = [];
     for (const item of playlistData.items) {
       const videoId = item.snippet.resourceId.videoId;
+      const duration = videoDurations[videoId] || 0;
+      
+      // Skip Shorts (videos under 60 seconds)
+      if (duration < 60) {
+        console.log(`Skipping Short: ${item.snippet.title} (${duration}s)`);
+        continue;
+      }
+      
       const thumbnailUrl = item.snippet.thumbnails.maxres?.url 
         || item.snippet.thumbnails.high?.url 
         || item.snippet.thumbnails.medium?.url

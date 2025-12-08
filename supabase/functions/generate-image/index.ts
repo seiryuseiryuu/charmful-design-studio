@@ -69,18 +69,26 @@ Person Consistency (from own channel thumbnails):
 ${assetNote}${ownChannelNote}
 Based on these references, create a NEW YouTube thumbnail with these specifications:
 - Aspect ratio: 16:9 (1280x720)
-- Main content: ${prompt}
+- Main content/theme: ${prompt}
 - Style: Match the visual style, energy, and color palette of the reference thumbnails
 - Make it eye-catching, high contrast, and professional
 - The people in the registered assets MUST appear in the thumbnail with EXACT likeness
+
+CRITICAL TEXT RULES:
+- Do NOT include long text or full video titles on the thumbnail
+- Text should be minimal: 1-3 impactful words MAXIMUM
+- Use short, punchy keywords or emotional phrases only (e.g., "衝撃", "最強", "ヤバい", "!?")
+- Let the visual imagery convey the message, not text
 
 IMPORTANT: 
 - The person(s) from registered assets must be the MAIN focus
 - Their face must be clearly visible and recognizable
 - Create an original composition inspired by the style references`
-      : `Create a professional YouTube thumbnail image in 16:9 aspect ratio (1280x720). ${prompt}. 
+      : `Create a professional YouTube thumbnail image in 16:9 aspect ratio (1280x720). 
+Theme: ${prompt}. 
 Style: High contrast, vibrant colors, eye-catching design suitable for YouTube. 
-Make it visually striking and attention-grabbing. Wide landscape format.`;
+Make it visually striking and attention-grabbing. Wide landscape format.
+CRITICAL: Do NOT put long text or video titles on the thumbnail. Use minimal text only - 1-3 impactful words maximum.`;
 
     // Add the text prompt
     messageContent.push({
