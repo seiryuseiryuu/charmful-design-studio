@@ -1052,45 +1052,34 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                 </Button>
 
                 {workflow.patternAnalysis && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4">
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
                     <h4 className="font-semibold flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary" />
                       分析結果
                     </h4>
                     
-                    {/* シンプルなサマリー表示 */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-blue-500" />
-                        <span className="text-sm">テロップ</span>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-20 shrink-0">テロップ:</span>
+                        <span>{typeof workflow.patternAnalysis.textPosition === 'string' ? workflow.patternAnalysis.textPosition : '-'}</span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-purple-500" />
-                        <span className="text-sm">配色</span>
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-20 shrink-0">配色:</span>
+                        <span>{typeof workflow.patternAnalysis.colorScheme === 'string' ? workflow.patternAnalysis.colorScheme : '-'}</span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-green-500" />
-                        <span className="text-sm">人物配置</span>
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-20 shrink-0">人物:</span>
+                        <span>{typeof workflow.patternAnalysis.personPosition === 'string' ? workflow.patternAnalysis.personPosition : '-'}</span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-orange-500" />
-                        <span className="text-sm">レイアウト</span>
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-20 shrink-0">レイアウト:</span>
+                        <span>{typeof workflow.patternAnalysis.layout === 'string' ? workflow.patternAnalysis.layout : '-'}</span>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-pink-500" />
-                        <span className="text-sm">視覚効果</span>
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-20 shrink-0">効果:</span>
+                        <span>{typeof workflow.patternAnalysis.effects === 'string' ? workflow.patternAnalysis.effects : '-'}</span>
                       </div>
-                      {workflow.patternAnalysis.uniqueStyle && (
-                        <div className="flex items-center gap-2 p-2 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                          <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                          <span className="text-sm">独自スタイル</span>
-                        </div>
-                      )}
                     </div>
-
-                    <p className="text-sm text-muted-foreground">
-                      {workflow.selectedReferences.length}枚のサムネイルからパターンを学習しました。次のステップでこのパターンを反映したモデルを生成します。
-                    </p>
                   </div>
                 )}
 
