@@ -18,6 +18,7 @@ import {
   Loader2,
   Link as LinkIcon,
   Palette,
+  Search,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -39,6 +40,7 @@ interface Channel {
   theme_color: string | null;
   description: string | null;
   created_at: string;
+  channel_icon?: string | null;
 }
 
 interface ChannelFormData {
@@ -46,6 +48,7 @@ interface ChannelFormData {
   channel_url: string;
   theme_color: string;
   description: string;
+  channel_icon: string;
 }
 
 const defaultFormData: ChannelFormData = {
@@ -53,6 +56,7 @@ const defaultFormData: ChannelFormData = {
   channel_url: '',
   theme_color: '#8b5cf6',
   description: '',
+  channel_icon: '',
 };
 
 export default function Channels() {
@@ -65,6 +69,7 @@ export default function Channels() {
   const [formData, setFormData] = useState<ChannelFormData>(defaultFormData);
   const [channelType, setChannelType] = useState<'own' | 'competitor'>('own');
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingInfo, setIsFetchingInfo] = useState(false);
 
   useEffect(() => {
     fetchChannels();
@@ -102,8 +107,52 @@ export default function Channels() {
       channel_url: channel.channel_url || '',
       theme_color: channel.theme_color || '#8b5cf6',
       description: channel.description || '',
+      channel_icon: channel.channel_icon || '',
     });
     setIsDialogOpen(true);
+  };
+
+  const fetchChannelInfo = async (url: string) => {
+    if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+      return;
+    }
+
+    setIsFetchingInfo(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-channel-info`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelUrl: url }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setFormData(prev => ({
+          ...prev,
+          channel_name: prev.channel_name || data.channelName,
+          channel_icon: data.channelIcon || '',
+        }));
+        toast({ title: 'チャンネル情報を取得しました' });
+      }
+    } catch (error) {
+      console.error('Error fetching channel info:', error);
+    } finally {
+      setIsFetchingInfo(false);
+    }
+  };
+
+  const handleUrlChange = (url: string) => {
+    setFormData(prev => ({ ...prev, channel_url: url }));
+  };
+
+  const handleUrlBlur = () => {
+    if (formData.channel_url && !formData.channel_name) {
+      fetchChannelInfo(formData.channel_url);
+    }
   };
 
   const saveChannel = async () => {
@@ -170,12 +219,20 @@ export default function Channels() {
     <Card className="glass glass-hover animate-slide-up">
       <CardContent className="p-4">
         <div className="flex items-start gap-4">
-          <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-            style={{ backgroundColor: channel.theme_color || '#8b5cf6' }}
-          >
-            <Youtube className="w-6 h-6 text-white" />
-          </div>
+          {channel.channel_icon ? (
+            <img
+              src={channel.channel_icon}
+              alt={channel.channel_name}
+              className="w-12 h-12 rounded-xl object-cover shrink-0"
+            />
+          ) : (
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+              style={{ backgroundColor: channel.theme_color || '#8b5cf6' }}
+            >
+              <Youtube className="w-6 h-6 text-white" />
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <h3 className="font-medium truncate">{channel.channel_name}</h3>
             {channel.channel_url && (
@@ -338,13 +395,39 @@ export default function Channels() {
 
             <div className="space-y-2">
               <Label htmlFor="channel_url">チャンネルURL</Label>
-              <Input
-                id="channel_url"
-                value={formData.channel_url}
-                onChange={(e) => setFormData({ ...formData, channel_url: e.target.value })}
-                placeholder="https://youtube.com/@..."
-                className="bg-secondary/50"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="channel_url"
+                  value={formData.channel_url}
+                  onChange={(e) => handleUrlChange(e.target.value)}
+                  onBlur={handleUrlBlur}
+                  placeholder="https://youtube.com/@..."
+                  className="bg-secondary/50 flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => fetchChannelInfo(formData.channel_url)}
+                  disabled={isFetchingInfo || !formData.channel_url}
+                >
+                  {isFetchingInfo ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+              {formData.channel_icon && (
+                <div className="flex items-center gap-2 mt-2 p-2 bg-secondary/30 rounded-lg">
+                  <img
+                    src={formData.channel_icon}
+                    alt="Channel icon"
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                  <span className="text-sm text-muted-foreground">チャンネルアイコン取得済み</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
