@@ -61,6 +61,8 @@ interface PatternAnalysis {
   personPosition: string;
   layout: string;
   effects: string;
+  commonElements?: string;
+  uniqueStyle?: string;
 }
 
 interface MaterialSuggestion {
@@ -273,25 +275,62 @@ export default function ThumbnailWorkflow() {
     setIsAnalyzing(true);
     try {
       const thumbnailUrls = workflow.selectedReferences.map(t => t.thumbnail_url);
+      const thumbnailTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean);
       
+      // 画像を直接分析するためにimageUrlsパラメータを使用
       const { data, error } = await supabase.functions.invoke('chat', {
         body: {
           messages: [{
             role: 'user',
-            content: `以下の${workflow.selectedReferences.length}枚のYouTubeサムネイルを分析し、共通するパターンを抽出してください。
+            content: `これらの${workflow.selectedReferences.length}枚のYouTubeサムネイル画像を詳細に視覚分析してください。
 
-サムネイルURL:
-${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
+【動画タイトル参考】
+${thumbnailTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
-以下のJSON形式で回答してください:
+【分析項目】各サムネイルを実際に見て、以下を具体的に分析：
+
+1. **テロップ・文字の配置**: 
+   - 文字の位置（左上/右上/中央/下部など）
+   - フォントサイズ（大/中/小）
+   - 文字の色と縁取り
+   - 文字数と行数
+
+2. **配色パターン**:
+   - 背景の主な色
+   - アクセントカラー
+   - 全体のトーン（明るい/暗い/ビビッド）
+   - グラデーションの有無と方向
+
+3. **人物の配置**:
+   - 人物の位置（左/右/中央）
+   - 顔の大きさ（画面に占める割合）
+   - 表情パターン（驚き/笑顔/真剣など）
+   - 人物の切り抜き方
+
+4. **レイアウト構成**:
+   - 全体の構図（1:1分割/3分割/中央集中など）
+   - 余白の使い方
+   - 視線誘導の流れ
+   - 情報の優先順位
+
+5. **視覚効果**:
+   - 使われているエフェクト（光/影/ブラー）
+   - アイコンや装飾要素
+   - 枠線やフレーム
+   - 矢印や強調マーク
+
+以下のJSON形式で詳細に回答してください:
 {
-  "textPosition": "テロップ・文字の配置パターン",
-  "colorScheme": "使われている配色パターン",
-  "personPosition": "人物の配置パターン",
-  "layout": "全体的なレイアウトパターン",
-  "effects": "使われている視覚効果"
+  "textPosition": "具体的な位置と配置パターン（例：右上に大きく3文字、白文字に黒縁取り）",
+  "colorScheme": "具体的な配色（例：背景は暗めの青グラデーション、アクセントに黄色）",
+  "personPosition": "具体的な人物配置（例：左1/3に顔のアップ、驚いた表情、切り抜き配置）",
+  "layout": "具体的なレイアウト（例：左に人物、右にテキスト、背景は対角線グラデーション）",
+  "effects": "具体的な効果（例：人物に白い縁取り、背景に放射状の光線エフェクト）",
+  "commonElements": "共通して使われている要素リスト",
+  "uniqueStyle": "このチャンネル特有のスタイル特徴"
 }`
           }],
+          imageUrls: thumbnailUrls,
         },
       });
 
@@ -301,6 +340,7 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         setWorkflow(prev => ({ ...prev, patternAnalysis: parsed }));
+        toast({ title: '分析完了', description: '画像パターンを詳細に分析しました' });
       }
     } catch (error) {
       console.error('Analysis error:', error);
@@ -1001,14 +1041,55 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                 </Button>
 
                 {workflow.patternAnalysis && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-2">
-                    <h4 className="font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" />分析結果</h4>
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex gap-2"><Badge variant="secondary">テロップ</Badge><span>{workflow.patternAnalysis.textPosition}</span></div>
-                      <div className="flex gap-2"><Badge variant="secondary">配色</Badge><span>{workflow.patternAnalysis.colorScheme}</span></div>
-                      <div className="flex gap-2"><Badge variant="secondary">人物</Badge><span>{workflow.patternAnalysis.personPosition}</span></div>
-                      <div className="flex gap-2"><Badge variant="secondary">レイアウト</Badge><span>{workflow.patternAnalysis.layout}</span></div>
-                      <div className="flex gap-2"><Badge variant="secondary">効果</Badge><span>{workflow.patternAnalysis.effects}</span></div>
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                    <h4 className="font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" />詳細分析結果</h4>
+                    <div className="grid gap-3 text-sm">
+                      <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-blue-500/80">テロップ配置</Badge>
+                        </div>
+                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.textPosition}</p>
+                      </div>
+                      <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-purple-500/80">配色</Badge>
+                        </div>
+                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.colorScheme}</p>
+                      </div>
+                      <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-green-500/80">人物配置</Badge>
+                        </div>
+                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.personPosition}</p>
+                      </div>
+                      <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-orange-500/80">レイアウト</Badge>
+                        </div>
+                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.layout}</p>
+                      </div>
+                      <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-pink-500/80">視覚効果</Badge>
+                        </div>
+                        <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.effects}</p>
+                      </div>
+                      {workflow.patternAnalysis.commonElements && (
+                        <div className="p-3 bg-background/50 rounded-lg space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-cyan-500/80">共通要素</Badge>
+                          </div>
+                          <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.commonElements}</p>
+                        </div>
+                      )}
+                      {workflow.patternAnalysis.uniqueStyle && (
+                        <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-yellow-500/80">チャンネル特有スタイル</Badge>
+                          </div>
+                          <p className="text-muted-foreground pl-2">{workflow.patternAnalysis.uniqueStyle}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

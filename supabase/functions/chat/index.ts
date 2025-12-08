@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, imageUrls } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     if (!LOVABLE_API_KEY) {
@@ -30,6 +30,35 @@ serve(async (req) => {
 具体的で実践的なアドバイスを日本語で提供してください。マークダウン記法を使って見やすく整理してください。
 ユーザーが画像生成を希望したら、Google Gemini画像生成用の詳細なプロンプトを英語で作成してください。`;
 
+    // Build message content - support for image analysis
+    let processedMessages = messages.map((msg: any) => {
+      // If it's a user message and we have imageUrls to include
+      if (msg.role === 'user' && imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
+        const content: any[] = [];
+        
+        // Add images first
+        for (const imgUrl of imageUrls) {
+          if (imgUrl && typeof imgUrl === 'string') {
+            content.push({
+              type: 'image_url',
+              image_url: { url: imgUrl },
+            });
+          }
+        }
+        
+        // Add text content
+        content.push({
+          type: 'text',
+          text: msg.content,
+        });
+        
+        return { role: msg.role, content };
+      }
+      return msg;
+    });
+
+    console.log(`Processing chat with ${imageUrls?.length || 0} images`);
+
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -40,7 +69,7 @@ serve(async (req) => {
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages,
+          ...processedMessages,
         ],
       }),
     });
