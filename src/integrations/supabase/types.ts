@@ -46,6 +46,7 @@ export type Database = {
       }
       channel_settings: {
         Row: {
+          channel_icon: string | null
           channel_name: string
           channel_type: string
           channel_url: string | null
@@ -57,6 +58,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          channel_icon?: string | null
           channel_name: string
           channel_type?: string
           channel_url?: string | null
@@ -68,6 +70,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          channel_icon?: string | null
           channel_name?: string
           channel_type?: string
           channel_url?: string | null

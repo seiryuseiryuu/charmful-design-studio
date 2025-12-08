@@ -169,6 +169,7 @@ export default function Channels() {
       channel_type: channelType,
       theme_color: formData.theme_color || null,
       description: formData.description || null,
+      channel_icon: formData.channel_icon || null,
     };
 
     if (editingChannel) {
