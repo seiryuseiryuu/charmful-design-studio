@@ -53,6 +53,7 @@ interface MaterialItem {
 interface WorkflowState {
   step: number;
   selectedReferences: ChannelThumbnail[];
+  videoTitle: string;
   text: string;
   materials: MaterialItem[];
   generatedImages: string[];
@@ -64,6 +65,17 @@ interface AIGuidance {
   title: string;
   content: string;
   suggestions: string[];
+}
+
+interface TextSuggestion {
+  text: string;
+  reason: string;
+}
+
+interface MaterialSuggestion {
+  type: string;
+  description: string;
+  examples: string[];
 }
 
 export default function ThumbnailWorkflow() {
@@ -80,11 +92,16 @@ export default function ThumbnailWorkflow() {
   const [workflow, setWorkflow] = useState<WorkflowState>({
     step: 1,
     selectedReferences: [],
+    videoTitle: '',
     text: '',
     materials: [],
     generatedImages: [],
     isABTest: false,
   });
+
+  const [textSuggestions, setTextSuggestions] = useState<TextSuggestion[]>([]);
+  const [materialSuggestions, setMaterialSuggestions] = useState<MaterialSuggestion[]>([]);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
 
   const [aiGuidance, setAiGuidance] = useState<AIGuidance | null>(null);
 
@@ -243,6 +260,85 @@ ${referenceInfo.map((r, i) => `${i + 1}. "${r.title}" (${r.channelType})`).join(
     }
     
     return suggestions.slice(0, 3);
+  };
+
+  // Generate suggestions from video title
+  const generateSuggestionsFromTitle = async () => {
+    if (!workflow.videoTitle.trim()) {
+      toast({ title: 'タイトルを入力', description: '動画タイトルを入力してください', variant: 'destructive' });
+      return;
+    }
+
+    setIsGeneratingSuggestions(true);
+    try {
+      const referenceInfo = workflow.selectedReferences.map(t => ({
+        title: t.video_title,
+        channelType: t.channel_type === 'own' ? '自チャンネル' : '競合チャンネル',
+      }));
+
+      const { data, error } = await supabase.functions.invoke('chat', {
+        body: {
+          messages: [{
+            role: 'user',
+            content: `あなたはYouTubeサムネイルの専門家です。以下の動画タイトルから、効果的なサムネイル文言と必要な素材を提案してください。
+
+動画タイトル: 「${workflow.videoTitle}」
+
+${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i) => `${i + 1}. "${r.title}" (${r.channelType})`).join('\n')}\n` : ''}
+
+以下のJSON形式で回答してください（必ずこの形式で）:
+{
+  "textSuggestions": [
+    {"text": "サムネイル文言1", "reason": "この文言が効果的な理由"},
+    {"text": "サムネイル文言2", "reason": "この文言が効果的な理由"},
+    {"text": "サムネイル文言3", "reason": "この文言が効果的な理由"}
+  ],
+  "materialSuggestions": [
+    {"type": "人物写真", "description": "必要な表情や構図", "examples": ["例1", "例2"]},
+    {"type": "背景・装飾", "description": "推奨する背景や装飾", "examples": ["例1", "例2"]}
+  ],
+  "tips": "その他のアドバイス"
+}
+
+サムネイル文言は15〜25文字程度で、視聴者の興味を引くものにしてください。`
+          }],
+        },
+      });
+
+      if (error) throw error;
+      
+      // Parse JSON response
+      try {
+        const jsonMatch = data.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          setTextSuggestions(parsed.textSuggestions || []);
+          setMaterialSuggestions(parsed.materialSuggestions || []);
+          
+          setAiGuidance({
+            step: 2,
+            title: 'AIが文言と素材を提案しました',
+            content: parsed.tips || '上の提案から選ぶか、カスタマイズしてください。',
+            suggestions: parsed.textSuggestions?.map((s: TextSuggestion) => s.text) || [],
+          });
+        }
+      } catch (parseError) {
+        console.error('Parse error:', parseError);
+        // Fallback to simple extraction
+        const suggestions = extractSuggestionsFromResponse(data.content);
+        setAiGuidance({
+          step: 2,
+          title: '文言の提案',
+          content: data.content,
+          suggestions,
+        });
+      }
+    } catch (error) {
+      console.error('Suggestion error:', error);
+      toast({ title: 'エラー', description: '提案の生成に失敗しました', variant: 'destructive' });
+    } finally {
+      setIsGeneratingSuggestions(false);
+    }
   };
 
   const proceedToStep3 = async () => {
@@ -448,9 +544,12 @@ Style: Bold, eye-catching, high contrast colors, professional design`;
       step: 1, 
       isABTest: true,
       selectedReferences: [],
+      videoTitle: '',
       text: '',
       materials: [],
     }));
+    setTextSuggestions([]);
+    setMaterialSuggestions([]);
     setAiGuidance({
       step: 1,
       title: 'A/Bテスト用の新パターンを作成',
@@ -681,44 +780,116 @@ Style: Bold, eye-catching, high contrast colors, professional design`;
                     Step 2: 文言を決定
                   </CardTitle>
                   <CardDescription>
-                    サムネイルに表示するテキストを入力してください
+                    動画タイトルを入力すると、AIがサムネイル用の文言を提案します
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* AI Suggestion Quick Apply */}
-                  {aiGuidance?.suggestions && aiGuidance.suggestions.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium flex items-center gap-2">
+                <CardContent className="space-y-6">
+                  {/* Video Title Input */}
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      📹 動画タイトル
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={workflow.videoTitle}
+                        onChange={(e) => setWorkflow(prev => ({ ...prev, videoTitle: e.target.value }))}
+                        placeholder="例: 【初心者向け】プログラミングの始め方完全ガイド"
+                        className="flex-1 bg-secondary/50"
+                      />
+                      <Button
+                        onClick={generateSuggestionsFromTitle}
+                        disabled={!workflow.videoTitle.trim() || isGeneratingSuggestions}
+                        className="gradient-primary"
+                      >
+                        {isGeneratingSuggestions ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        <span className="hidden sm:inline ml-2">AI提案</span>
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      動画タイトルを入力して「AI提案」をクリックすると、文言と素材を自動提案します
+                    </p>
+                  </div>
+
+                  {/* AI Text Suggestions */}
+                  {textSuggestions.length > 0 && (
+                    <div className="space-y-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
                         <Lightbulb className="w-4 h-4 text-yellow-500" />
-                        AIの提案をクリックして使用:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {aiGuidance.suggestions.map((suggestion, idx) => (
-                          <Button
+                        AIの文言提案（クリックで使用）
+                      </h4>
+                      <div className="space-y-2">
+                        {textSuggestions.map((suggestion, idx) => (
+                          <button
                             key={idx}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setWorkflow(prev => ({ ...prev, text: suggestion.replace(/[「」『』]/g, '') }))}
-                            className="text-xs"
+                            onClick={() => setWorkflow(prev => ({ ...prev, text: suggestion.text }))}
+                            className={`w-full text-left p-3 rounded-lg border transition-all ${
+                              workflow.text === suggestion.text
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                            }`}
                           >
-                            {suggestion}
-                          </Button>
+                            <p className="font-medium text-sm">{suggestion.text}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{suggestion.reason}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Material Suggestions */}
+                  {materialSuggestions.length > 0 && (
+                    <div className="space-y-3 p-4 bg-secondary/30 rounded-lg border border-border">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-primary" />
+                        必要な素材（次のステップで使用）
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {materialSuggestions.map((material, idx) => (
+                          <div key={idx} className="p-3 bg-background/50 rounded-lg">
+                            <p className="font-medium text-sm flex items-center gap-2">
+                              {material.type === '人物写真' ? '👤' : '🎨'} {material.type}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">{material.description}</p>
+                            {material.examples.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {material.examples.map((ex, i) => (
+                                  <Badge key={i} variant="outline" className="text-xs">
+                                    {ex}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
                   )}
                   
+                  {/* Manual Text Input */}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">サムネイルに表示するテキスト</label>
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      ✏️ サムネイル文言
+                      {workflow.text && (
+                        <Badge variant="secondary" className="text-xs">
+                          {workflow.text.length}文字
+                        </Badge>
+                      )}
+                    </label>
                     <Textarea
                       value={workflow.text}
                       onChange={(e) => setWorkflow(prev => ({ ...prev, text: e.target.value }))}
-                      placeholder="例: 【衝撃】知らないと損する○○の真実"
-                      className="min-h-[100px] bg-secondary/50"
+                      placeholder="上の提案から選ぶか、直接入力してください"
+                      className="min-h-[80px] bg-secondary/50"
                     />
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>文字数: {workflow.text.length}文字</span>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>推奨: 15〜25文字</span>
+                      <span className={workflow.text.length > 0 && (workflow.text.length < 15 || workflow.text.length > 25) ? 'text-yellow-500' : ''}>
+                        {workflow.text.length > 0 && (workflow.text.length < 15 ? '短すぎる可能性があります' : workflow.text.length > 25 ? '長すぎる可能性があります' : '✓ 適切な長さです')}
+                      </span>
                     </div>
                   </div>
                   
@@ -738,7 +909,7 @@ Style: Bold, eye-catching, high contrast colors, professional design`;
                       {isAnalyzing ? (
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       ) : null}
-                      次へ
+                      素材準備へ
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
