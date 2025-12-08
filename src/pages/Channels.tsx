@@ -17,7 +17,6 @@ import {
   Trash2,
   Loader2,
   Link as LinkIcon,
-  Palette,
   Search,
 } from 'lucide-react';
 import {
@@ -227,11 +226,8 @@ export default function Channels() {
               className="w-12 h-12 rounded-xl object-cover shrink-0"
             />
           ) : (
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: channel.theme_color || '#8b5cf6' }}
-            >
-              <Youtube className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+              <Youtube className="w-6 h-6 text-muted-foreground" />
             </div>
           )}
           <div className="flex-1 min-w-0">
@@ -432,33 +428,12 @@ export default function Channels() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="theme_color" className="flex items-center gap-2">
-                <Palette className="w-4 h-4" />
-                テーマカラー
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="theme_color"
-                  type="color"
-                  value={formData.theme_color}
-                  onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })}
-                  className="w-12 h-10 p-1 cursor-pointer"
-                />
-                <Input
-                  value={formData.theme_color}
-                  onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })}
-                  className="flex-1 bg-secondary/50"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">説明</Label>
+              <Label htmlFor="description">チャンネル説明</Label>
               <Textarea
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="チャンネルの特徴やスタイルなど..."
+                placeholder="チャンネルの特徴やスタイルなど（サムネイル生成時に参照されます）"
                 className="bg-secondary/50 min-h-[100px]"
               />
             </div>
