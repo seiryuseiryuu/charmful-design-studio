@@ -241,8 +241,10 @@ export default function ThumbnailWorkflow() {
           // 既存の選択から同じチャンネルのものを除去して新しいものを追加
           const otherSelections = prev.selectedReferences.filter(t => !t.id.startsWith(channel.id));
           const combined = [...otherSelections, ...toSelect];
-          // 合計10個まで
-          return { ...prev, selectedReferences: combined.slice(0, 10) };
+          // チャンネルタイプごとに10個まで（自分10個 + 競合10個 = 合計20個）
+          const ownSelections = combined.filter(t => t.channel_type === 'own').slice(0, 10);
+          const competitorSelections = combined.filter(t => t.channel_type === 'competitor').slice(0, 10);
+          return { ...prev, selectedReferences: [...ownSelections, ...competitorSelections] };
         });
       }
       
@@ -259,10 +261,19 @@ export default function ThumbnailWorkflow() {
       const isSelected = prev.selectedReferences.some(t => t.id === thumbnail.id);
       if (isSelected) {
         return { ...prev, selectedReferences: prev.selectedReferences.filter(t => t.id !== thumbnail.id) };
-      } else if (prev.selectedReferences.length < 10) {
+      } else {
+        // チャンネルタイプごとに10個まで制限
+        const ownCount = prev.selectedReferences.filter(t => t.channel_type === 'own').length;
+        const competitorCount = prev.selectedReferences.filter(t => t.channel_type === 'competitor').length;
+        
+        if (thumbnail.channel_type === 'own' && ownCount >= 10) {
+          return prev;
+        }
+        if (thumbnail.channel_type === 'competitor' && competitorCount >= 10) {
+          return prev;
+        }
         return { ...prev, selectedReferences: [...prev.selectedReferences, thumbnail] };
       }
-      return prev;
     });
   };
 
@@ -853,7 +864,7 @@ ${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
                   Step 2: チャンネルを入力（自動で直近10個を選択）
                 </CardTitle>
                 <CardDescription>
-                  チャンネルURLを入力すると直近10個のサムネイルが自動選択されます
+                  自分のチャンネルから10個、競合から10個、合計20個まで選択できます
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
