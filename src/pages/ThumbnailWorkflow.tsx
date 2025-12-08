@@ -428,40 +428,59 @@ ${pattern.description}
         if (error) throw error;
 
         // 必要素材・文言を提案
-        const { data: descData } = await supabase.functions.invoke('chat', {
-          body: {
-            messages: [{ 
-              role: 'user', 
-              content: `動画タイトル「${workflow.videoTitle}」のサムネイル（${pattern.name}パターン）の必要素材と文言を提案。
-
-以下のJSON形式で回答:
-{
-  "description": "${pattern.description}",
-  "requiredMaterials": [
-    {"name": "素材名", "description": "説明", "priority": "high"}
-  ],
-  "suggestedTexts": [
-    {"text": "文言（2〜6文字）", "reason": "理由"}
-  ]
-}` 
-            }],
-          },
-        });
-
         let description = pattern.description;
         let requiredMaterials: MaterialSuggestion[] = [];
         let suggestedTexts: TextSuggestionItem[] = [];
 
-        if (descData?.content) {
-          try {
+        try {
+          const { data: descData, error: descError } = await supabase.functions.invoke('chat', {
+            body: {
+              messages: [{ 
+                role: 'user', 
+                content: `動画タイトル「${workflow.videoTitle}」のサムネイル（${pattern.name}パターン）の必要素材と文言を提案してください。
+
+必ず以下のJSON形式のみで回答してください（説明文は不要）:
+{
+  "description": "このパターンの構造説明",
+  "requiredMaterials": [
+    {"name": "素材名", "description": "用途説明", "priority": "high"},
+    {"name": "素材名2", "description": "用途説明", "priority": "medium"}
+  ],
+  "suggestedTexts": [
+    {"text": "文言例1（2〜6文字）", "reason": "選定理由"},
+    {"text": "文言例2（2〜6文字）", "reason": "選定理由"},
+    {"text": "文言例3（2〜6文字）", "reason": "選定理由"}
+  ]
+}
+
+パターン: ${pattern.name}
+特徴: ${pattern.description}` 
+              }],
+            },
+          });
+
+          console.log('Material suggestion response:', descData, descError);
+
+          if (descData?.content) {
             const match = descData.content.match(/\{[\s\S]*\}/);
             if (match) {
               const parsed = JSON.parse(match[0]);
               description = parsed.description || description;
-              requiredMaterials = parsed.requiredMaterials || [];
-              suggestedTexts = parsed.suggestedTexts || [];
+              requiredMaterials = Array.isArray(parsed.requiredMaterials) ? parsed.requiredMaterials : [];
+              suggestedTexts = Array.isArray(parsed.suggestedTexts) ? parsed.suggestedTexts : [];
             }
-          } catch {}
+          }
+        } catch (suggestionError) {
+          console.error('Material suggestion error:', suggestionError);
+          // フォールバック：基本的な提案を生成
+          requiredMaterials = [
+            { name: '人物写真', description: '表情豊かな写真', priority: 'high' as const },
+            { name: '背景素材', description: 'テーマに合った背景', priority: 'medium' as const }
+          ];
+          suggestedTexts = [
+            { text: '衝撃', reason: 'インパクト重視' },
+            { text: '必見', reason: '注目を集める' }
+          ];
         }
 
         return { 
