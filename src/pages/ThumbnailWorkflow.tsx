@@ -338,56 +338,203 @@ export default function ThumbnailWorkflow() {
       const thumbnailUrls = workflow.selectedReferences.map(t => t.thumbnail_url);
       const thumbnailTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean);
       
-      // パターンを複数に分類して分析
-      const { data, error } = await supabase.functions.invoke('chat', {
+      // ===== 第1段階: 各画像の精緻な個別分析 =====
+      const { data: individualData, error: individualError } = await supabase.functions.invoke('chat', {
         body: {
           messages: [{
             role: 'user',
-            content: `これらの${workflow.selectedReferences.length}枚のYouTubeサムネイル画像を分析し、2〜3種類のパターンに分類してください。
+            content: `【第1段階：個別画像の精緻分析】
+
+${workflow.selectedReferences.length}枚のYouTubeサムネイル画像を一枚ずつ詳細に分析してください。
 
 【動画タイトル参考】
-${thumbnailTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+${thumbnailTitles.map((t, i) => `画像${i + 1}: ${t}`).join('\n')}
 
-【分析指示】
-サムネイルを視覚的特徴で分類し、各パターンの特徴を抽出してください。
+【分析項目 - 各画像について以下を抽出】
+
+1. テロップ/テキスト分析
+   - テキストの有無（あえて文字無しかどうか）
+   - 文字数・フォントスタイル（太字/細字、角丸/シャープ）
+   - 配置位置（上部/中央/下部、左寄せ/中央/右寄せ）
+   - 文字サイズ比率（画面に対する割合）
+   - 文字色・縁取り・影の有無
+   - 複数行の場合のレイアウト
+
+2. 配色・感情分析
+   - 主要色（最大3色とその割合）
+   - 配色の意図（例：赤黒=危機感・ネガティブ、青白=信頼・清潔感）
+   - 明度・彩度の傾向
+   - グラデーションの有無と方向
+
+3. 構図・レイアウト
+   - 分割パターン（単一構図/2分割/3分割/対角線）
+   - 視線誘導の仕掛け（矢印、指差し、目線の方向）
+   - 余白の使い方
+   - 対比構造（Before/After、○×比較など）
+
+4. 人物・オブジェクト
+   - 人物の有無と人数
+   - 表情（驚き/怒り/喜び/真剣など）
+   - ポーズ・ジェスチャー
+   - 配置位置（左/中央/右、顔の向き）
+   - 切り抜きか背景込みか
+
+5. 視覚効果
+   - 吹き出し・フレーム・枠
+   - 矢印（方向、意味：転換/強調/比較）
+   - アイコン・絵文字
+   - 光彩・ぼかし・モザイク
+   - 数字・記号の強調
 
 以下のJSON形式で回答:
 {
-  "patterns": [
+  "individualAnalysis": [
     {
-      "name": "パターンA（具体的な名前）",
-      "description": "このパターンの特徴を30文字以内で",
-      "characteristics": {
-        "textPosition": "テロップの位置・サイズ・色",
-        "colorScheme": "配色・トーン",
-        "personPosition": "人物配置・表情",
-        "layout": "全体構図",
-        "effects": "視覚効果"
+      "imageIndex": 1,
+      "title": "動画タイトル",
+      "text": {
+        "hasText": true,
+        "intentionallyNoText": false,
+        "content": "実際のテロップ内容",
+        "charCount": 5,
+        "fontStyle": "太字・角丸",
+        "position": "中央上部",
+        "sizeRatio": "大（40%以上）",
+        "color": "#FFFFFF",
+        "outline": "黒縁取り3px",
+        "shadow": true
+      },
+      "color": {
+        "primary": "#FF0000",
+        "secondary": "#000000",
+        "tertiary": "#FFFFFF",
+        "mood": "危機感・緊張",
+        "gradient": "なし"
+      },
+      "composition": {
+        "pattern": "中央集中型",
+        "divisionType": "単一",
+        "eyeGuidance": "人物の視線が右上を向く",
+        "whitespace": "少ない",
+        "contrast": "なし"
+      },
+      "person": {
+        "hasPerson": true,
+        "count": 1,
+        "expression": "驚き・目を見開く",
+        "gesture": "口を手で覆う",
+        "position": "中央やや左",
+        "isCutout": true
+      },
+      "effects": {
+        "arrows": ["右向き矢印（変化を示す）"],
+        "frames": "赤い枠線",
+        "icons": ["×マーク"],
+        "highlights": "集中線",
+        "numbers": "なし"
       }
-    },
-    {
-      "name": "パターンB",
-      "description": "...",
-      "characteristics": {...}
     }
-  ],
-  "summary": "全体の傾向まとめ（50文字以内）"
+  ]
 }
 
-※必ず2〜3パターンに分類
-※各パターンの特徴は具体的かつ簡潔に`
+※各画像について漏れなく分析
+※推測ではなく実際に見える要素のみを記述`
           }],
           imageUrls: thumbnailUrls,
         },
       });
 
-      if (error) throw error;
+      if (individualError) throw individualError;
 
-      const jsonMatch = data.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        setWorkflow(prev => ({ ...prev, patternAnalysis: parsed }));
-        toast({ title: '分析完了', description: `${parsed.patterns?.length || 0}パターンを検出しました` });
+      // 個別分析結果を取得
+      let individualAnalysis = [];
+      const individualMatch = individualData.content.match(/\{[\s\S]*\}/);
+      if (individualMatch) {
+        const parsed = JSON.parse(individualMatch[0]);
+        individualAnalysis = parsed.individualAnalysis || [];
+      }
+
+      // ===== 第2段階: パターン抽出と分類 =====
+      const { data: patternData, error: patternError } = await supabase.functions.invoke('chat', {
+        body: {
+          messages: [{
+            role: 'user',
+            content: `【第2段階：パターン抽出と分類】
+
+以下は${workflow.selectedReferences.length}枚のサムネイル画像の個別分析結果です。
+これらを分析し、共通するパターンを2〜4種類に分類してください。
+
+【個別分析データ】
+${JSON.stringify(individualAnalysis, null, 2)}
+
+【パターン抽出ルール】
+1. 複数の画像に共通する特徴を「パターン」として抽出
+2. 2枚以上で見られる特徴のみをパターンとして認定
+3. 以下の観点で共通点を探す：
+   - テロップの配色パターン（赤黒=ネガティブ、青系=信頼など）
+   - 構図パターン（Before/After対比、矢印による転換表現など）
+   - 感情表現パターン（驚き顔+大文字、真剣顔+シンプルなど）
+   - 意図的な無テキストパターン
+   - 数字強調パターン
+
+【出力形式】
+{
+  "patterns": [
+    {
+      "name": "パターン名（例：危機感訴求型、ビフォーアフター型）",
+      "description": "30文字以内の特徴説明",
+      "matchCount": 3,
+      "matchingImages": [1, 3, 5],
+      "characteristics": {
+        "textPosition": "具体的な位置・サイズ",
+        "textStyle": "フォント・色・効果の具体的指定",
+        "colorScheme": "具体的な色コードと配色意図",
+        "colorMood": "この配色が与える印象",
+        "personPosition": "人物配置の具体的指定",
+        "personExpression": "表情・ポーズの指定",
+        "layout": "構図パターンの具体的説明",
+        "visualTechniques": "矢印・枠・効果の具体的使用法",
+        "keyElement": "このパターンの最も重要な要素"
+      },
+      "designRules": [
+        "ルール1: 具体的な再現指示",
+        "ルール2: 具体的な再現指示",
+        "ルール3: 具体的な再現指示"
+      ]
+    }
+  ],
+  "summary": "全体の傾向まとめ（50文字以内）",
+  "uniqueFindings": [
+    "発見1: 共通して見られる独自の手法",
+    "発見2: チャンネル特有のスタイル"
+  ]
+}
+
+※必ず2〜4パターンに分類
+※各パターンには具体的な再現ルールを含める
+※matchCountが多いほど重要なパターン`
+          }],
+          imageUrls: thumbnailUrls,
+        },
+      });
+
+      if (patternError) throw patternError;
+
+      const patternMatch = patternData.content.match(/\{[\s\S]*\}/);
+      if (patternMatch) {
+        const parsed = JSON.parse(patternMatch[0]);
+        // 個別分析結果も含めて保存
+        setWorkflow(prev => ({ 
+          ...prev, 
+          patternAnalysis: {
+            ...parsed,
+            individualAnalysis
+          }
+        }));
+        toast({ 
+          title: '高度分析完了', 
+          description: `${parsed.patterns?.length || 0}パターンを検出（${individualAnalysis.length}枚を個別分析）` 
+        });
       }
     } catch (error) {
       console.error('Analysis error:', error);
