@@ -568,12 +568,9 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
   const generateThumbnail = async () => {
     setIsGenerating(true);
     try {
-      // Collect reference thumbnail URLs, prioritizing own channel for person consistency
+      // Collect reference thumbnail URLs, separating own channel and competitor
       const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
       const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
-      
-      // Own channel refs first for better person recognition
-      const referenceImages = [...ownChannelRefs, ...competitorRefs].map(t => t.thumbnail_url);
       
       // Get registered channel assets (always include these)
       const selfAssets = channelAssets.filter(a => a.asset_type === 'self');
@@ -598,21 +595,30 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
         ? `\n登場人物: 参考サムネイル（自チャンネル${ownChannelRefs.length}枚）に登場する人物と同じ人物を使用してください。`
         : '';
       
+      // Add competitor channel info
+      const competitorInfo = competitorRefs.length > 0
+        ? `\n\n【競合チャンネルの参考サムネイル（${competitorRefs.length}枚）】\nスタイル、構図、色使いなど視覚的な要素のみを参考にしてください。人物は絶対にコピーしないでください。`
+        : '';
+      
       const prompt = `動画タイトル「${workflow.videoTitle}」のYouTubeサムネイル。
-文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${registeredAssetsInfo}${materialDescText}`;
+文言: ${workflow.text}${workflow.videoDescription ? `\n動画内容: ${workflow.videoDescription}` : ''}${personInfo}${registeredAssetsInfo}${competitorInfo}${materialDescText}`;
 
-      // Collect all asset images to send as references
+      // Collect all images to send as references
+      // Order: registered assets -> own channel refs -> competitor refs
       const assetImages = channelAssets.map(a => a.image_url);
-      const allReferenceImages = [...assetImages, ...referenceImages];
+      const ownChannelImages = ownChannelRefs.map(t => t.thumbnail_url);
+      const competitorImages = competitorRefs.map(t => t.thumbnail_url);
+      const allReferenceImages = [...assetImages, ...ownChannelImages, ...competitorImages];
 
-      console.log('Generating with', allReferenceImages.length, 'reference images (assets:', assetImages.length, ', own:', ownChannelRefs.length, ')');
+      console.log('Generating with references - assets:', assetImages.length, 'own:', ownChannelImages.length, 'competitor:', competitorImages.length);
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { 
           prompt,
           referenceImages: allReferenceImages,
           assetCount: assetImages.length,
-          ownChannelCount: ownChannelRefs.length,
+          ownChannelCount: ownChannelImages.length,
+          competitorCount: competitorImages.length,
         },
       });
 
