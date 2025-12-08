@@ -300,7 +300,7 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
   "tips": "その他のアドバイス"
 }
 
-サムネイル文言は15〜25文字程度で、視聴者の興味を引くものにしてください。`
+サムネイル文言は4〜8文字程度で、インパクトのある短いキーワードにしてください。例：「衝撃」「神回」「最強」「禁断」など。`
           }],
         },
       });
@@ -890,9 +890,9 @@ ${referenceInfo.length > 0 ? `参考サムネイル:\n${referenceInfo.map((r, i)
                       className="min-h-[80px] bg-secondary/50"
                     />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>推奨: 15〜25文字</span>
-                      <span className={workflow.text.length > 0 && (workflow.text.length < 15 || workflow.text.length > 25) ? 'text-yellow-500' : ''}>
-                        {workflow.text.length > 0 && (workflow.text.length < 15 ? '短すぎる可能性があります' : workflow.text.length > 25 ? '長すぎる可能性があります' : '✓ 適切な長さです')}
+                      <span>推奨: 4〜8文字</span>
+                      <span className={workflow.text.length > 0 && (workflow.text.length < 4 || workflow.text.length > 8) ? 'text-yellow-500' : 'text-green-500'}>
+                        {workflow.text.length > 0 && (workflow.text.length < 4 ? '短すぎる可能性があります' : workflow.text.length > 8 ? '長すぎる可能性があります' : '✓ 適切な長さです')}
                       </span>
                     </div>
                   </div>
