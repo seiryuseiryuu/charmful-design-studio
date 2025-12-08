@@ -5,10 +5,8 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { 
-  MessageSquare, 
   ImageIcon, 
   Settings, 
-  Sparkles, 
   TrendingUp,
   Clock,
   ArrowRight,
@@ -78,9 +76,9 @@ export default function Dashboard() {
   ];
 
   const quickActions = [
-    { title: 'サムネイル作成', description: 'ワークフローでサムネイルを作成', icon: Wand2, href: '/thumbnail-workflow', color: 'primary' },
-    { title: 'AIチャット', description: 'AIと対話しながら作成', icon: Sparkles, href: '/chat', color: 'secondary' },
+    { title: 'サムネイル作成', description: 'AIでサムネイルを作成', icon: Wand2, href: '/create', color: 'primary' },
     { title: 'ギャラリー', description: '作成したサムネイル一覧', icon: ImageIcon, href: '/gallery', color: 'secondary' },
+    { title: 'チャンネル設定', description: 'チャンネル情報を管理', icon: Settings, href: '/channels', color: 'secondary' },
     { title: '素材管理', description: '人物・キャラクター素材', icon: Palette, href: '/settings', color: 'secondary' },
   ];
 
@@ -211,7 +209,7 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground mb-4">
                 ワークフローでサムネイルを作成してみましょう
               </p>
-              <Link to="/thumbnail-workflow">
+              <Link to="/create">
                 <Button className="gradient-primary glow-sm">
                   <Plus className="w-4 h-4 mr-2" />
                   サムネイルを作成
