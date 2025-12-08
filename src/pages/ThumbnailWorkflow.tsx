@@ -67,6 +67,7 @@ interface ModelImageInfo {
   imageUrl: string;
   description: string;
   requiredMaterials: string[];
+  suggestedText?: string;
 }
 
 interface WorkflowState {
@@ -304,7 +305,10 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
     
     try {
       const pattern = workflow.patternAnalysis;
-      const referenceImages = workflow.selectedReferences.map(t => t.thumbnail_url);
+      const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
+      const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
+      const referenceImages = [...ownChannelRefs, ...competitorRefs].map(t => t.thumbnail_url);
+      const referenceTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean).slice(0, 5);
       
       const modelVariations = [
         { name: 'スタンダード', emphasis: '基本パターンに忠実' },
@@ -313,31 +317,68 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
       ];
 
       const modelPromises = modelVariations.map(async (variation) => {
+        // 動画タイトル・内容・参考動画をプロンプトに組み込む
         const prompt = `YouTubeサムネイルのモデル画像を生成。
-パターン: テロップ配置=${pattern.textPosition}, 配色=${pattern.colorScheme}, 人物配置=${pattern.personPosition}, レイアウト=${pattern.layout}
-バリエーション: ${variation.name} - ${variation.emphasis}
-ダミーテキスト使用、16:9（1280x720）`;
+
+【動画情報】
+タイトル: ${workflow.videoTitle}
+${workflow.videoDescription ? `内容: ${workflow.videoDescription}` : ''}
+
+【参考動画タイトル】
+${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+【パターン分析結果】
+- テロップ配置: ${pattern.textPosition}
+- 配色: ${pattern.colorScheme}
+- 人物配置: ${pattern.personPosition}
+- レイアウト: ${pattern.layout}
+- 効果: ${pattern.effects}
+
+【バリエーション】${variation.name} - ${variation.emphasis}
+
+【生成ルール】
+- アスペクト比: 16:9（1280x720）
+- テロップはタイトル・内容から最もインパクトのある2〜6文字を使用
+- 人物配置は分析結果に従う
+- ダミーではなく、実際の動画内容を反映させる`;
 
         const { data, error } = await supabase.functions.invoke('generate-image', {
           body: { 
             prompt,
             referenceImages: referenceImages.slice(0, 5),
             assetCount: 0,
-            ownChannelCount: 0,
-            competitorCount: referenceImages.length,
+            ownChannelCount: ownChannelRefs.length,
+            competitorCount: competitorRefs.length,
           },
         });
 
         if (error) throw error;
 
+        // 生成されたモデル画像から必要素材を分析
         const { data: descData } = await supabase.functions.invoke('chat', {
           body: {
-            messages: [{ role: 'user', content: `このサムネイルモデルについて、構造説明（50文字以内）と必要素材リストをJSON形式で: {"description": "...", "requiredMaterials": ["..."]}` }],
+            messages: [{ 
+              role: 'user', 
+              content: `動画タイトル「${workflow.videoTitle}」${workflow.videoDescription ? `（内容: ${workflow.videoDescription}）` : ''}のサムネイルモデルを分析してください。
+
+以下のJSON形式で回答:
+{
+  "description": "このモデルの構造説明（50文字以内）",
+  "requiredMaterials": [
+    "本当に必要な素材1（例：演者の驚き顔の写真）",
+    "本当に必要な素材2（例：商品のクローズアップ画像）"
+  ],
+  "suggestedText": "タイトル・内容から導出した最適な文言（2〜6文字）"
+}
+
+※必要素材は、この動画のサムネイル作成に本当に必要なもののみ箇条書きで。不要な素材は含めない。` 
+            }],
           },
         });
 
         let description = `${variation.name}: ${variation.emphasis}`;
         let requiredMaterials: string[] = [];
+        let suggestedText = '';
 
         if (descData?.content) {
           try {
@@ -346,11 +387,12 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
               const parsed = JSON.parse(match[0]);
               description = parsed.description || description;
               requiredMaterials = parsed.requiredMaterials || [];
+              suggestedText = parsed.suggestedText || '';
             }
           } catch {}
         }
 
-        return { imageUrl: data.imageUrl, description, requiredMaterials };
+        return { imageUrl: data.imageUrl, description, requiredMaterials, suggestedText };
       });
 
       const results = await Promise.all(modelPromises);
@@ -418,12 +460,34 @@ ${thumbnailUrls.map((url, i) => `${i + 1}. ${url}`).join('\n')}
       const ownChannelRefs = workflow.selectedReferences.filter(t => t.channel_type === 'own');
       const competitorRefs = workflow.selectedReferences.filter(t => t.channel_type !== 'own');
       const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
+      const referenceTitles = workflow.selectedReferences.map(t => t.video_title).filter(Boolean).slice(0, 5);
+      const pattern = workflow.patternAnalysis;
 
-      const prompt = `動画タイトル「${workflow.videoTitle}」のYouTubeサムネイル。
-文言: ${workflow.text}
+      const prompt = `YouTubeサムネイルを生成。
+
+【動画情報】
+タイトル: ${workflow.videoTitle}
 ${workflow.videoDescription ? `内容: ${workflow.videoDescription}` : ''}
-${selectedModel ? `モデル: ${selectedModel.description}` : ''}
-${workflow.patternAnalysis ? `パターン: ${workflow.patternAnalysis.layout}` : ''}`;
+
+【サムネイル文言】${workflow.text}
+
+【参考動画タイトル】
+${referenceTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+${pattern ? `【パターン分析（これに従って生成）】
+- テロップ配置: ${pattern.textPosition}
+- 配色: ${pattern.colorScheme}
+- 人物配置: ${pattern.personPosition}
+- レイアウト: ${pattern.layout}
+- 効果: ${pattern.effects}` : ''}
+
+${selectedModel ? `【選択モデル】${selectedModel.description}` : ''}
+
+【生成ルール】
+- アスペクト比: 16:9（1280x720）
+- 文言「${workflow.text}」をテロップ配置パターンに従って配置
+- 人物配置パターンに従って人物を配置
+- 効果・配色パターンを適用`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { 
@@ -912,10 +976,23 @@ ${workflow.patternAnalysis ? `パターン: ${workflow.patternAnalysis.layout}` 
                         <h5 className="font-medium text-sm mb-1">構造説明</h5>
                         <p className="text-sm text-muted-foreground">{selectedModel.description}</p>
                       </div>
+                      {selectedModel.suggestedText && (
+                        <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                          <h5 className="font-medium text-sm mb-1 flex items-center gap-2">
+                            <Type className="w-4 h-4 text-green-500" />推奨文言
+                          </h5>
+                          <button
+                            onClick={() => setWorkflow(prev => ({ ...prev, text: selectedModel.suggestedText || '' }))}
+                            className="text-lg font-bold text-green-600 dark:text-green-400 hover:underline"
+                          >
+                            {selectedModel.suggestedText}
+                          </button>
+                        </div>
+                      )}
                       {selectedModel.requiredMaterials.length > 0 && (
                         <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
                           <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
-                            <Lightbulb className="w-4 h-4 text-yellow-500" />必要な素材
+                            <Lightbulb className="w-4 h-4 text-yellow-500" />必要な素材（箇条書き）
                           </h5>
                           <ul className="space-y-1">
                             {selectedModel.requiredMaterials.map((m, i) => (
