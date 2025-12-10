@@ -41,13 +41,17 @@ serve(async (req) => {
     // If we have a handle, resolve it to channel ID
     if (channelHandle && !youtubeChannelId) {
       // Try channels endpoint with forHandle first
+      console.log('Trying forHandle API for:', channelHandle);
       const channelResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/channels?part=id,snippet&forHandle=${channelHandle}&key=${YOUTUBE_API_KEY}`
       );
       const channelData = await channelResponse.json();
+      console.log('forHandle response status:', channelResponse.status);
+      console.log('forHandle response:', JSON.stringify(channelData));
       
       if (channelData.items && channelData.items.length > 0) {
         const item = channelData.items[0];
+        console.log('Found channel via forHandle:', item.id, item.snippet.title);
         return new Response(
           JSON.stringify({
             success: true,
@@ -61,13 +65,17 @@ serve(async (req) => {
       }
       
       // Fallback to search
+      console.log('forHandle returned no results, trying search API');
       const searchResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(channelHandle)}&key=${YOUTUBE_API_KEY}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + channelHandle)}&key=${YOUTUBE_API_KEY}`
       );
       const searchData = await searchResponse.json();
+      console.log('Search response status:', searchResponse.status);
+      console.log('Search response:', JSON.stringify(searchData));
       
       if (searchData.items && searchData.items.length > 0) {
         youtubeChannelId = searchData.items[0].snippet.channelId;
+        console.log('Found channel via search:', youtubeChannelId);
       }
     }
 
