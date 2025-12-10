@@ -33,7 +33,7 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { channelUrl, channelId } = await req.json();
+    const { channelUrl, channelId, saveToDb = true } = await req.json();
 
     // Extract channel ID or handle from URL
     let youtubeChannelId = '';
@@ -187,8 +187,8 @@ serve(async (req) => {
       }
     }
 
-    // Upsert thumbnails (ignore conflicts)
-    if (thumbnails.length > 0) {
+    // Upsert thumbnails (ignore conflicts) - only if saveToDb is true and channelId is valid UUID
+    if (saveToDb && thumbnails.length > 0 && channelId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId)) {
       const { error: insertError } = await supabase
         .from('channel_thumbnails')
         .upsert(thumbnails, { onConflict: 'channel_id,video_id', ignoreDuplicates: true });
