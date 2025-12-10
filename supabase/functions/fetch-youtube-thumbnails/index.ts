@@ -53,21 +53,32 @@ serve(async (req) => {
 
     // If we have a handle, resolve it to channel ID
     if (channelHandle && !youtubeChannelId) {
-      const searchResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(channelHandle)}&key=${YOUTUBE_API_KEY}`
+      // First try the official forHandle endpoint (most accurate)
+      const channelByHandleResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=id,contentDetails&forHandle=${channelHandle}&key=${YOUTUBE_API_KEY}`
       );
-      const searchData = await searchResponse.json();
+      const channelByHandleData = await channelByHandleResponse.json();
+      console.log('forHandle response:', JSON.stringify(channelByHandleData));
       
-      if (searchData.items && searchData.items.length > 0) {
-        youtubeChannelId = searchData.items[0].snippet.channelId;
+      if (channelByHandleData.items && channelByHandleData.items.length > 0) {
+        youtubeChannelId = channelByHandleData.items[0].id;
+        console.log('Found channel ID via forHandle:', youtubeChannelId);
       } else {
-        // Try channels endpoint with forHandle
-        const channelResponse = await fetch(
-          `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${channelHandle}&key=${YOUTUBE_API_KEY}`
+        // Fallback to search API
+        const searchResponse = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + channelHandle)}&key=${YOUTUBE_API_KEY}`
         );
-        const channelData = await channelResponse.json();
-        if (channelData.items && channelData.items.length > 0) {
-          youtubeChannelId = channelData.items[0].id;
+        const searchData = await searchResponse.json();
+        console.log('Search response:', JSON.stringify(searchData));
+        
+        if (searchData.items && searchData.items.length > 0) {
+          // Find exact match if possible
+          const exactMatch = searchData.items.find((item: any) => 
+            item.snippet.customUrl?.toLowerCase() === `@${channelHandle.toLowerCase()}` ||
+            item.snippet.channelTitle?.toLowerCase() === channelHandle.toLowerCase()
+          );
+          youtubeChannelId = exactMatch ? exactMatch.snippet.channelId : searchData.items[0].snippet.channelId;
+          console.log('Found channel ID via search:', youtubeChannelId);
         }
       }
     }
