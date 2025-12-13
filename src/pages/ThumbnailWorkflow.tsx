@@ -164,29 +164,17 @@ export default function ThumbnailWorkflow() {
   // 前回のステップを記録して自動生成をトリガー
   const prevStepRef = useRef<number>(1);
 
-  // Step 4に移動したとき、モデル画像がなければ自動生成
+  // Step 5に移動したとき、モデル画像がなければ自動生成
   useEffect(() => {
     const currentStep = workflow.step;
     const hasPatternAnalysis = !!workflow.patternAnalysis;
     const noModels = workflow.modelImages.length === 0;
     
-    if (currentStep === 4 && prevStepRef.current !== 4 && hasPatternAnalysis && noModels && !isGeneratingModels) {
+    if (currentStep === 5 && prevStepRef.current !== 5 && hasPatternAnalysis && noModels && !isGeneratingModels) {
       generateModelImagesRef.current?.();
     }
     prevStepRef.current = currentStep;
   }, [workflow.step, workflow.patternAnalysis, workflow.modelImages.length, isGeneratingModels]);
-
-  // Step 6に移動したとき、まだ画像が生成されていなければ自動生成
-  useEffect(() => {
-    const currentStep = workflow.step;
-    const noImages = workflow.generatedImages.length === 0;
-    const hasText = workflow.text.trim().length > 0;
-    
-    if (currentStep === 6 && prevStepRef.current !== 6 && noImages && hasText && !isGenerating) {
-      generateThumbnailRef.current?.();
-    }
-    // prevStepRefは上のuseEffectで更新されるので、ここでは更新しない
-  }, [workflow.step, workflow.generatedImages.length, workflow.text, isGenerating]);
 
   // メモリリーク防止: マテリアルのプレビューURLをクリーンアップ
   useEffect(() => {
@@ -999,14 +987,13 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
   const allThumbnails = [...ownChannel.thumbnails, ...competitorThumbnails];
   const selectedModel = workflow.selectedModelIndex !== null ? workflow.modelImages[workflow.selectedModelIndex] : null;
 
-  // 新しいステップ順序
+  // 新しいステップ順序（5ステップ）
   const steps = [
     { num: 1, title: 'タイトル入力', icon: Type },
     { num: 2, title: 'チャンネル選択', icon: Youtube },
     { num: 3, title: 'パターン分析', icon: Eye },
-    { num: 4, title: 'モデル選択', icon: Sparkles },
-    { num: 5, title: '素材・文言', icon: Camera },
-    { num: 6, title: 'AI生成', icon: Wand2 },
+    { num: 4, title: '素材・文言', icon: Camera },
+    { num: 5, title: 'AI生成', icon: Wand2 },
   ];
 
   return (
@@ -1411,168 +1398,46 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
             </Card>
           )}
 
-          {/* Step 4: Model Selection */}
+          {/* Step 4: Material & Text */}
           {workflow.step === 4 && (
             <Card className="glass">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" />Step 4: モデル画像を選択</CardTitle>
-                <CardDescription>パターンに基づいて3つのモデルを生成</CardDescription>
+                <CardTitle className="flex items-center gap-2"><Camera className="w-5 h-5 text-primary" />Step 4: 素材と文言</CardTitle>
+                <CardDescription>モデルの提案に基づいて素材をアップロードし、サムネイル文言を決定</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {workflow.modelImages.length === 0 ? (
-                  <Button onClick={generateModelImages} disabled={isGeneratingModels} className="w-full gradient-primary">
-                    {isGeneratingModels ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />生成中...</> : <><Sparkles className="w-4 h-4 mr-2" />モデル画像を生成</>}
-                  </Button>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {workflow.modelImages.map((model, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => setWorkflow(prev => ({ ...prev, selectedModelIndex: idx }))}
-                          className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                            workflow.selectedModelIndex === idx ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-primary/50'
-                          }`}
-                        >
-                          <img src={model.imageUrl} alt="" className="aspect-video object-cover" />
-                          <div className="p-3 bg-secondary/30">
-                            <div className="flex items-center justify-between mb-1">
-                              <Badge variant="outline">パターン {idx + 1}</Badge>
-                              {workflow.selectedModelIndex === idx && <Check className="w-4 h-4 text-primary" />}
-                            </div>
-                            <p className="text-sm text-muted-foreground">{model.description}</p>
+              <CardContent className="space-y-6">
+                {/* モデル画像から提案された素材 */}
+                {workflow.patternAnalysis?.patterns && workflow.patternAnalysis.patterns.length > 0 && (
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                    <h5 className="font-medium text-sm mb-3 flex items-center gap-2">
+                      <Lightbulb className="w-4 h-4 text-yellow-500" />パターン分析から推奨される素材
+                    </h5>
+                    <div className="space-y-2">
+                      {workflow.patternAnalysis.patterns.slice(0, 2).map((pattern: any, idx: number) => (
+                        <div key={idx} className="p-3 bg-background/50 rounded-lg">
+                          <Badge variant="outline" className="mb-2">{pattern.name}</Badge>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {pattern.characteristics?.personPosition && (
+                              <div className="flex items-start gap-2">
+                                <Badge variant="outline" className="text-xs shrink-0 border-red-500 text-red-500">必須</Badge>
+                                <div>
+                                  <p className="font-medium">人物写真</p>
+                                  <p className="text-muted-foreground">{pattern.characteristics.personPosition}</p>
+                                </div>
+                              </div>
+                            )}
+                            {pattern.characteristics?.effects && (
+                              <div className="flex items-start gap-2">
+                                <Badge variant="outline" className="text-xs shrink-0 border-yellow-500 text-yellow-500">推奨</Badge>
+                                <div>
+                                  <p className="font-medium">背景・効果素材</p>
+                                  <p className="text-muted-foreground">{pattern.characteristics.effects}</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
-                    </div>
-                    
-                    {/* モデル修正フィードバック */}
-                    <div className="p-4 bg-secondary/30 rounded-lg space-y-3">
-                      <h5 className="font-medium flex items-center gap-2">
-                        <Pencil className="w-4 h-4 text-primary" />
-                        モデルを修正
-                      </h5>
-                      <Textarea
-                        value={modelFeedback}
-                        onChange={(e) => setModelFeedback(e.target.value)}
-                        placeholder="例：人物を左側に配置して、文字をもっと大きく..."
-                        className="bg-background/50 min-h-[60px]"
-                      />
-                      <div className="flex gap-2">
-                        <Button 
-                          onClick={regenerateModelWithFeedback} 
-                          disabled={isRegeneratingModel || !modelFeedback.trim()} 
-                          variant="outline"
-                          className="flex-1"
-                        >
-                          {isRegeneratingModel ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />修正中...</> : <><Pencil className="w-4 h-4 mr-2" />修正して再生成</>}
-                        </Button>
-                        <Button onClick={generateModelImages} disabled={isGeneratingModels} variant="outline">
-                          <RefreshCw className="w-4 h-4 mr-2" />全て再生成
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    {/* モデル保存 */}
-                    {workflow.selectedModelIndex !== null && (
-                      <Button 
-                        onClick={async () => {
-                          const model = workflow.modelImages[workflow.selectedModelIndex!];
-                          try {
-                            await supabase.from('thumbnails').insert({
-                              user_id: user!.id,
-                              image_url: model.imageUrl,
-                              prompt: `モデル: ${model.patternName}`,
-                              title: model.patternName,
-                            });
-                            toast({ title: '保存完了', description: 'モデル画像を保存しました' });
-                          } catch {
-                            toast({ title: 'エラー', description: '保存に失敗しました', variant: 'destructive' });
-                          }
-                        }}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        <Download className="w-4 h-4 mr-2" />選択中のモデルを保存
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-4">
-                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 3 }))}><ArrowLeft className="w-4 h-4 mr-2" />戻る</Button>
-                  <Button onClick={() => setWorkflow(prev => ({ ...prev, step: 5 }))} disabled={workflow.selectedModelIndex === null} className="gradient-primary">
-                    次へ<ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Step 5: Material & Text */}
-          {workflow.step === 5 && (
-            <Card className="glass">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Camera className="w-5 h-5 text-primary" />Step 5: 素材と文言</CardTitle>
-                <CardDescription>必要素材をアップロードし、サムネイル文言を決定</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {selectedModel && (
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <img src={selectedModel.imageUrl} alt="" className="aspect-video object-cover rounded-lg" />
-                    <div className="space-y-3">
-                      <div className="p-3 bg-secondary/30 rounded-lg">
-                        <h5 className="font-medium text-sm mb-1">構造説明</h5>
-                        <p className="text-sm text-muted-foreground">{selectedModel.description}</p>
-                      </div>
-                      {selectedModel.suggestedTexts && selectedModel.suggestedTexts.length > 0 && (
-                        <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-                          <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
-                            <Type className="w-4 h-4 text-green-500" />推奨文言（複数提案）
-                          </h5>
-                          <div className="space-y-2">
-                            {selectedModel.suggestedTexts.map((s, i) => (
-                              <button
-                                key={i}
-                                onClick={() => setWorkflow(prev => ({ ...prev, text: s.text }))}
-                                className={`w-full text-left p-2 rounded-lg border transition-all ${
-                                  workflow.text === s.text ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
-                                }`}
-                              >
-                                <p className="font-bold">{s.text}</p>
-                                <p className="text-xs text-muted-foreground">{s.reason}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedModel.requiredMaterials.length > 0 && (
-                        <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
-                          <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
-                            <Lightbulb className="w-4 h-4 text-yellow-500" />必要な素材（優先度順）
-                          </h5>
-                          <div className="space-y-2">
-                            {selectedModel.requiredMaterials.map((m, i) => (
-                              <div key={i} className="flex items-start gap-2 p-2 rounded bg-background/50">
-                                <Badge 
-                                  variant="outline" 
-                                  className={`text-xs shrink-0 ${
-                                    m.priority === 'high' ? 'border-red-500 text-red-500' :
-                                    m.priority === 'medium' ? 'border-yellow-500 text-yellow-500' :
-                                    'border-muted-foreground'
-                                  }`}
-                                >
-                                  {m.priority === 'high' ? '必須' : m.priority === 'medium' ? '推奨' : '任意'}
-                                </Badge>
-                                <div>
-                                  <p className="text-sm font-medium">{m.name}</p>
-                                  <p className="text-xs text-muted-foreground">{m.description}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -1637,8 +1502,8 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
                 </div>
 
                 <div className="flex items-center justify-between pt-4">
-                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 4 }))}><ArrowLeft className="w-4 h-4 mr-2" />戻る</Button>
-                  <Button onClick={() => setWorkflow(prev => ({ ...prev, step: 6 }))} disabled={!workflow.text.trim()} className="gradient-primary">
+                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 3 }))}><ArrowLeft className="w-4 h-4 mr-2" />戻る</Button>
+                  <Button onClick={() => setWorkflow(prev => ({ ...prev, step: 5 }))} disabled={!workflow.text.trim()} className="gradient-primary">
                     次へ<ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </div>
@@ -1646,26 +1511,95 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
             </Card>
           )}
 
-          {/* Step 6: AI Generation */}
-          {workflow.step === 6 && (
+          {/* Step 5: AI Generation (Final - Model Selection + Generation) */}
+          {workflow.step === 5 && (
             <Card className="glass">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5 text-primary" />Step 6: サムネイルを生成</CardTitle>
+                <CardTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5 text-primary" />Step 5: AI生成</CardTitle>
+                <CardDescription>パターンに基づいてモデル画像を生成し、最終サムネイルを作成</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Summary */}
                 <div className="p-4 bg-secondary/30 rounded-lg space-y-2 text-sm">
                   <p><span className="font-medium">タイトル:</span> {workflow.videoTitle}</p>
                   <p><span className="font-medium">文言:</span> {workflow.text}</p>
                   <p><span className="font-medium">参考:</span> {workflow.selectedReferences.length}枚</p>
-                  {selectedModel && <p><span className="font-medium">パターン:</span> {selectedModel.patternName}</p>}
+                  {workflow.materials.length > 0 && <p><span className="font-medium">素材:</span> {workflow.materials.length}枚</p>}
                 </div>
 
-                <Button onClick={generateThumbnail} disabled={isGenerating} className="w-full gradient-primary glow-sm h-12 text-lg">
-                  {isGenerating ? <><Loader2 className="w-5 h-5 animate-spin mr-2" />生成中...</> : <><Wand2 className="w-5 h-5 mr-2" />サムネイルを生成</>}
-                </Button>
-
-                {workflow.generatedImages.length > 0 && (
+                {/* Model Generation */}
+                {workflow.modelImages.length === 0 ? (
+                  <Button onClick={generateModelImages} disabled={isGeneratingModels} className="w-full gradient-primary h-12">
+                    {isGeneratingModels ? <><Loader2 className="w-5 h-5 animate-spin mr-2" />モデル画像を生成中...</> : <><Sparkles className="w-5 h-5 mr-2" />モデル画像を生成</>}
+                  </Button>
+                ) : (
                   <div className="space-y-4">
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                      モデルを選択してサムネイルを生成
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {workflow.modelImages.map((model, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setWorkflow(prev => ({ ...prev, selectedModelIndex: idx }))}
+                          className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                            workflow.selectedModelIndex === idx ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-primary/50'
+                          }`}
+                        >
+                          <img src={model.imageUrl} alt="" className="aspect-video object-cover" />
+                          <div className="p-3 bg-secondary/30">
+                            <div className="flex items-center justify-between mb-1">
+                              <Badge variant="outline">{model.patternName}</Badge>
+                              {workflow.selectedModelIndex === idx && <Check className="w-4 h-4 text-primary" />}
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2">{model.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* モデル修正フィードバック */}
+                    <div className="p-4 bg-secondary/30 rounded-lg space-y-3">
+                      <h5 className="font-medium flex items-center gap-2">
+                        <Pencil className="w-4 h-4 text-primary" />
+                        モデルを修正
+                      </h5>
+                      <Textarea
+                        value={modelFeedback}
+                        onChange={(e) => setModelFeedback(e.target.value)}
+                        placeholder="例：人物を左側に配置して、文字をもっと大きく..."
+                        className="bg-background/50 min-h-[60px]"
+                      />
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={regenerateModelWithFeedback} 
+                          disabled={isRegeneratingModel || !modelFeedback.trim() || workflow.selectedModelIndex === null} 
+                          variant="outline"
+                          className="flex-1"
+                        >
+                          {isRegeneratingModel ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />修正中...</> : <><Pencil className="w-4 h-4 mr-2" />修正して再生成</>}
+                        </Button>
+                        <Button onClick={generateModelImages} disabled={isGeneratingModels} variant="outline">
+                          <RefreshCw className="w-4 h-4 mr-2" />全て再生成
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Generate Final Thumbnail */}
+                    <Button 
+                      onClick={generateThumbnail} 
+                      disabled={isGenerating || workflow.selectedModelIndex === null} 
+                      className="w-full gradient-primary glow-sm h-12 text-lg"
+                    >
+                      {isGenerating ? <><Loader2 className="w-5 h-5 animate-spin mr-2" />サムネイル生成中...</> : <><Wand2 className="w-5 h-5 mr-2" />選択したモデルでサムネイルを生成</>}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Generated Thumbnails */}
+                {workflow.generatedImages.length > 0 && (
+                  <div className="space-y-4 border-t pt-6">
                     <h4 className="font-semibold">生成されたサムネイル</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {workflow.generatedImages.map((img, idx) => (
@@ -1700,7 +1634,7 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
 
                     <div className="flex gap-2">
                       <Button 
-                        onClick={() => setWorkflow(prev => ({ ...prev, step: 4, generatedImages: [] }))} 
+                        onClick={() => setWorkflow(prev => ({ ...prev, generatedImages: [], modelImages: [], selectedModelIndex: null }))} 
                         variant="outline"
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />別パターンで再生成
@@ -1711,7 +1645,7 @@ ${pattern?.summary ? `【パターン分析サマリー】${pattern.summary}` : 
                 )}
 
                 <div className="flex pt-4">
-                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 5 }))}><ArrowLeft className="w-4 h-4 mr-2" />戻る</Button>
+                  <Button variant="outline" onClick={() => setWorkflow(prev => ({ ...prev, step: 4 }))}><ArrowLeft className="w-4 h-4 mr-2" />戻る</Button>
                 </div>
               </CardContent>
             </Card>
